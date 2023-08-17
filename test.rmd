@@ -1,0 +1,19 @@
+```{R}
+# generate 200 samples form N(0,1) 
+x <- rnorm(200)
+hist(x)
+```
+
+```{R}
+# load data gapminder
+library(gapminder)
+# plot life expectancy vs. year
+plot(lifeExp ~ year, data = gapminder)
+
+
+```
+
+```{R}
+gapminder
+summary(gapminder)
+```

@@ -1,4 +1,11 @@
+---
+title: "aml-mc-hs23-ben"
+output: html_notebook
+---
+
+# Test
 ```{R}
+plot(cars)
 # generate 200 samples form N(0,1) 
 x <- rnorm(200)
 hist(x)

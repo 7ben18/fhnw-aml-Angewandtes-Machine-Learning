@@ -11,11 +11,11 @@ Basis von transaktionellen Kundeninformationen mittels binärer
 Klassifikation in Hinsicht auf personalisierte Werbekampagnen.
 
 # Inhalt
-• Aufbereitung eines Modellierungsdatensatz,
-• Modellentwicklung und systematischer Performance-Vergleich,
-• Vergleich der Haupteinflussfaktoren und Top-N Listen der Modelle,
-• Modell-Selektion und systematische Hyperparameter-Optimierung,
-• Modellvereinfachung und -beschreibung für Non-Data Scientist.
+• Aufbereitung eines Modellierungsdatensatz,  
+• Modellentwicklung und systematischer Performance-Vergleich,  
+• Vergleich der Haupteinflussfaktoren und Top-N Listen der Modelle,  
+• Modell-Selektion und systematische Hyperparameter-Optimierung,  
+• Modellvereinfachung und -beschreibung für Non-Data Scientist.  
 
 # 1. Daten
 Laden, transformieren und überprüfen der Datenqualität mittels 

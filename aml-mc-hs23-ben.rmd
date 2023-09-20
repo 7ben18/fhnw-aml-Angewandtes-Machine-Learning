@@ -1,26 +1,255 @@
 ---
 title: "aml-mc-hs23-ben"
-output: html_notebook
+author: "Si Ben Tran"
+date: "31.12.2023"
+subtitle: Product Affinity Modelling
 ---
 
-# Test
-```{R}
-plot(cars)
-# generate 200 samples form N(0,1) 
-x <- rnorm(200)
-hist(x)
+# Aufgaben
+Aufgabe: Entwickle und evaluiere Affinitätsmodelle für Kreditkarten auf 
+Basis von transaktionellen Kundeninformationen mittels binärer 
+Klassifikation in Hinsicht auf personalisierte Werbekampagnen.
+
+# Inhalt
+• Aufbereitung eines Modellierungsdatensatz,
+• Modellentwicklung und systematischer Performance-Vergleich,
+• Vergleich der Haupteinflussfaktoren und Top-N Listen der Modelle,
+• Modell-Selektion und systematische Hyperparameter-Optimierung,
+• Modellvereinfachung und -beschreibung für Non-Data Scientist.
+
+# 1. Daten
+Laden, transformieren und überprüfen der Datenqualität mittels 
+explorativer Datenanalyse; entfernen von Junior-Kreditkarten Kunden.
+
+## 1.1 Laden
+```{r}
+
 ```
 
-```{R}
-# load data gapminder
-library(gapminder)
-# plot life expectancy vs. year
-plot(lifeExp ~ year, data = gapminder)
-
+## 1.2 transormieren
+```{r}
 
 ```
 
-```{R}
-gapminder
-summary(gapminder)
+## 1.3 Datenqualität mittels eda
+```{r}
+
 ```
+
+## 1.4 entfernen von Junior Kreditkarten Kunden
+```{r}
+
+```
+
+# 2. Kombinieren 
+Kombinieren der Informationen zu Kunden und Bankdienstleistungen.
+```{r}
+
+```
+
+# 3. Identifizierung
+Identifizieren bestehender Kreditkartenkäufer inkl. Bestimmung des
+Kaufdatums und Rollup-Fensters, definiert durch 1 Monat Lag und 12
+Monate History vor Kreditkartenkauf.
+
+```{r}
+
+```
+
+## 3.1 Kaufdatum 
+```{r}
+
+```
+
+## 3.2 Rollup-Fenster
+```{r}
+
+```
+
+# 4. Nicht-Käufer
+Bestimmen der Nicht-Käufer zum Vergleich (inkl. Rollup-Fenster).
+
+## 4.1 Bestimmung
+```{r}
+
+```
+
+## 4.2 Vergleich 
+```{r}
+
+```
+
+## 4.3 Rollup-Fenster Vergleich
+```{r}
+
+```
+
+# 5. Event Bezogene Kundeninformationen 
+ Erzeugen event-bezogener Kundeninformationen für 12 Monate vor 
+Kreditkartenkauf (analog für Nicht-Käufer).
+
+## 5.1 Kundeninformation für 12 Monate von Käufer
+```{r}
+
+```
+
+## 5.2 Kundeninformation für 12 Monate von Nicht-Käufer
+```{r}
+
+```
+
+# 6. Vermögen & Umsätze
+Konstruieren der Vermögen und Umsätze im Rollup-Fenster auf Basis 
+der Transaktionshistorie.
+
+## 6.1 Vermögen
+```{r}
+
+```
+
+## 6.2 Umsätze
+```{r}
+
+```
+
+# 7. Kunden-spezifische statistische Kennzahlen
+Herleiten Kunden-spezifischer, statistischer Kennzahlen für Vermögen 
+und Umsätze im Rollup-Fenster mittels Funktionen.
+
+## 7.1 Funktion
+```{r}
+
+```
+
+## 7.2 Statistische Kennzahlen für Vermögen
+```{r}
+
+```
+
+## 7.3 Statistische Kennzahlen für Umsätze
+```{r}
+
+```
+
+## 8. Kombination von Event Informationen & Kreditkarten Käufer
+Kombinieren event-bezogener Informationen von KreditkartenKäufern und Nicht-Käufern.
+
+## 8.1 Kombination
+```{r}
+
+```
+
+# 9. Bereinigung
+Bereinigen unnötiger Informationen (z.B. IDs) und Überprüfen der 
+Struktur der Modellierungsdaten mittels explorativer Datenanalyse.
+
+## 9.1 Daten Bereinigen
+```{r}
+
+```
+
+## 9.2 Daten explorieren
+```{r}
+
+```
+
+# 10. Partitionierung
+Partitionieren der Daten in Trainings- und Testdaten.
+
+## 10.1 Train-Test Split
+```{r}
+
+```
+
+# 11. Baseline Modell
+Erstellen eines Baseline Modelles mittels logistischer Regression und 
+den Informationen “Alter”, “Geschlecht”, “Domizilregion”, 
+“Vermögen” und “Umsatz” vor Kreditkartenkauf. 
+
+## 11.1 Logistische Regression
+```{r}
+
+```
+
+# 12. Verbesserung des Baseline Modell
+Systematisches Explorieren von Verbesserungsmöglichkeiten des 
+Baseline Modelles durch Erweiterung erklärender Variablen, 
+Verwendung anderer Algorithmen und Optimierung.
+
+## 12.1 Erweiterung 
+```{r}
+
+```
+
+## 12.2 Andere Algorithmen 
+```{r}
+
+```
+
+## 12.3 Andere Optimierungen
+```{r}
+
+```
+
+# 13. Vergleich der Modelle
+Vergleichen der Kandidatenmodelle und identifizieren des bzgl. 
+Performance “besten” Modelles mit ROC, AUC und Precision.
+
+## 13.1 Modell Vergleich
+```{r}
+
+```
+
+
+# 14. Top-N Kunden 
+ Quantitatives Untersuchen der Unterschiede von Top-N Kunden Listen verschiedener Modelle
+ 
+## 14.1 Top-N Kunden Vergleich von Modellen
+```{r}
+
+```
+
+ 
+# 15. Wichtigkeit und Balancierung
+Untersuchen der globalen Wichtigkeit der Einflussfaktoren des 
+“besten” Modelles und Reduzieren des “besten” Modelles mittels 
+Balancieren von globaler Wichtigkeit und Modellperformance.
+
+## 15.1 Wichtigkeit
+```{r}
+
+```
+
+## 15.2 Balancierung 
+```{r}
+
+```
+
+
+# 16. Beschreibung 
+Beschreiben des Mehrwerts des “finalen” Modelles in der Praxis.
+```{r}
+
+```
+
+# Lieferobjekte
+Die minimalen Lieferobjekte im Notebook umfassen:
+
+## Anzahl Kreditkarten-Käufer und Nicht-Käufer mit kompletter 12 
+Monate-Rollup Information (Barplot).
+
+## Verteilung der Kaufzeitpunkte der Kreditkarten-Käufer bzw. Vergleichszeitpunkte der Nicht-Käufer (Densityplot).
+
+## Beschreibung der konstruierten, eigenen Variablen.
+
+## Beschreibung von Baseline und mind. 3 Kandidaten-Modellen.
+
+## Performance-Vergleich von Baseline und mind. 3 KandidatenModellen für 10-fache Kreuzvalidierung (Metrik: ROC Kurve und AuC). PRÄDIKTIVE MODELLE Mini-Challenge Lieferobjekte
+
+## Performance-Vergleich von Baseline und mind. 3 KandidatenModellen für Testdaten (Metriken: Konfusionsmatrix, Accuracy,Kohen’s Kappa, Matthew’s Korrelation, Precision, Recall und F1 als Tabelle, ROC Kurve und AuC als Abbildung).
+
+## Globale Wichtigkeit der Einflussfaktoren von Baseline und mind. 3. Kandidaten-Modellen (Variable Importance Plot).
+
+## Quantifizierung der Unterschiede von Top-5%, Top-10% KundenListen für Baseline und mind. 3 Kandidaten-Modellen (eigene Ideen).
+
+## Modellgüte (Lift Kurve) und Einfluss zentraler Variablen des finalen Modelles (eigene Ideen, um Non-Data Scientists zu überzeugen).

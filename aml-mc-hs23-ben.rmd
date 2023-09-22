@@ -17,19 +17,80 @@ Klassifikation in Hinsicht auf personalisierte Werbekampagnen.
 • Modell-Selektion und systematische Hyperparameter-Optimierung,  
 • Modellvereinfachung und -beschreibung für Non-Data Scientist.  
 
+# Libraries Laden
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(DataExplorer)
+library(lubridate)
+```
+
+
 # 1. Daten
 Laden, transformieren und überprüfen der Datenqualität mittels 
 explorativer Datenanalyse; entfernen von Junior-Kreditkarten Kunden.
 
 ## 1.1 Laden
+Insgesamt werden 8 verschiedene csv Files zur Verfuegung gestellt.
 ```{r}
+# alle file namen
+file_names <- c(
+  "account.csv", "card.csv", "client.csv", "disp.csv",
+  "district.csv", "loan.csv", "order.csv", "trans.csv"
+)
 
+# leere liste fuer dataframes
+data_frames <- list()
+
+# For loop durch file_name
+for (file_name in file_names) {
+  # path definieren
+  file_path <- file.path("xselling_banking_data", file_name)
+  
+  # daten einlesen und in liste speichern
+  data_frames[[file_name]] <- read.csv(file_path, header = TRUE, sep = ";")
+}
+
+# dataframes zuweisen
+account <- data_frames[["account.csv"]]
+card <- data_frames[["card.csv"]]
+client <- data_frames[["client.csv"]]
+disp <- data_frames[["disp.csv"]]
+district <- data_frames[["district.csv"]]
+loan <- data_frames[["loan.csv"]]
+order <- data_frames[["order.csv"]]
+trans <- data_frames[["trans.csv"]]
 ```
 
-## 1.2 transormieren
-```{r}
 
+## 1.2 transformieren
+### account
+Die Tabelle account besitzt 4 Spalten, 
+die account_id selbst, 
+district_id welches auf die tabelle district verweist.
+frequency welches die Haeufigkeit der Austellung von Kontoauszuegen definiert
+sowie ein datum. 
+
+Die Werte von frequency und datum muessen umgeaendert werden, weiter aendern wir ebenfalls den spaltenname von frequency zu haeufigkeit_austellung_kontoauszug.
+```{r}
+# Frequency
+account <- account %>%
+  mutate(frequency = case_when(
+    frequency == "POPLATEK MESICNE" ~ "MONTHLY ISSUANCE",
+    frequency == "POPLATEK TYDNE" ~ "WEEKLY ISSUANCE",
+    frequency == "POPLATEK PO OBRATU" ~ " ISSUANCE AFTER TRANSACTION",
+    TRUE ~ frequency  # Keep other values unchanged
+  )) %>% 
+  rename(haeufigkeit_austellung_kontoauszug = frequency)
+
+# Datum 
+account$date <- as.Date(sprintf("%06d", account$date), format = "%y%m%d") %>% as.character(account$date)
+
+account %>% sample_n(5)
 ```
+
+
+### 
 
 ## 1.3 Datenqualität mittels eda
 ```{r}

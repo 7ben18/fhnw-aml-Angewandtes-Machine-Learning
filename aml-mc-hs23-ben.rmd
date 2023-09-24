@@ -18,11 +18,13 @@ Klassifikation in Hinsicht auf personalisierte Werbekampagnen.
 • Modellvereinfachung und -beschreibung für Non-Data Scientist.  
 
 # Libraries Laden
-```{r}
+```{r echo=FALSE}
+install.packages("eeptools")
 library(tidyverse)
 library(tidymodels)
 library(DataExplorer)
 library(lubridate)
+library(eeptools)
 ```
 
 
@@ -32,6 +34,8 @@ explorativer Datenanalyse; entfernen von Junior-Kreditkarten Kunden.
 
 ## 1.1 Laden
 Insgesamt werden 8 verschiedene csv Files zur Verfuegung gestellt.
+Die Beschreibungen der Daten sind hier zu finden: https://sorry.vse.cz/~berka/challenge/PAST/index.html
+
 ```{r}
 # alle file namen
 file_names <- c(
@@ -64,14 +68,11 @@ trans <- data_frames[["trans.csv"]]
 
 
 ## 1.2 transformieren
-### account
-Die Tabelle account besitzt 4 Spalten, 
-die account_id selbst, 
-district_id welches auf die tabelle district verweist.
-frequency welches die Haeufigkeit der Austellung von Kontoauszuegen definiert
-sowie ein datum. 
+### 1.2.1 account
+Die Tabelle account besitzt 4 Spalten, die account_id selbst, district_id welches auf die tabelle district verweist. 
+Frequency welches die Haeufigkeit der Austellung von Kontoauszuegen definiert sowie ein datum. 
 
-Die Werte von frequency und datum muessen umgeaendert werden, weiter aendern wir ebenfalls den spaltenname von frequency zu haeufigkeit_austellung_kontoauszug.
+Die Werte von frequency und datum muessen umgeaendert werden, weiter aendern wir ebenfalls den spaltenname von frequency zu issuance_statement_frequency.
 ```{r}
 # Frequency
 account <- account %>%
@@ -81,25 +82,214 @@ account <- account %>%
     frequency == "POPLATEK PO OBRATU" ~ " ISSUANCE AFTER TRANSACTION",
     TRUE ~ frequency  # Keep other values unchanged
   )) %>% 
-  rename(haeufigkeit_austellung_kontoauszug = frequency)
+  rename(issuance_statement_frequency = frequency)
 
 # Datum 
-account$date <- as.Date(sprintf("%06d", account$date), format = "%y%m%d") %>% as.character(account$date)
+account$date <- ymd(account$date)
 
-account %>% sample_n(5)
+account %>% sample_n(size = 5)
 ```
 
+### 1.2.2 card
+Die Tabelle card beinhaltet die card_id, dis_id (verweist auf disp df) 
+type der Karte und issued. 
+Bei card aendern wir das Format in YYMMDD um und ignorierien die Zeit. 
+(Auch gemaess der Dokumentation, ist keine Zeit vorgesehen.)
+```{r}
+# Datum formatieren
+card$issued <- as_date(ymd_hms(card$issued))
+# Df ausgeben
+card %>% sample_n(size = 5)
+```
 
-### 
+### 1.2.3 client
+client Tabelle hat client_id, birht_number mit einem speziellen Format, YYMMDD
+fuer Maenner und YYMM + 50 DD fuer Frauen. Also sprich, wurden bei Frauen der Geburtsmonat um 50 addiert. Weiter gibt es noch die district_id, welches auf die district Tabelle verweist. 
+```{r}
+# Funktion zur Geschlechterbestimmung
+get_gender <- function(birth_number) {
+  year <- as.integer(substr(birth_number, 1, 2))
+  month <- as.integer(substr(birth_number, 3, 4))
+  day <- as.integer(substr(birth_number, 5, 6))
+  
+  # Bei Frauen wird der Geburtsmonat um 50 addiert
+  if (month > 12) {
+    gender <- "female"
+  } else {
+    gender <- "male"
+  }
+  
+  return(gender)
+}
+
+# Geschlecht bestimmen und als neue Spalte hinzufügen
+client$gender <- sapply(client$birth_number, get_gender)
+
+
+# filter nach Frauen, erstelle jahr (19XX), Monat - 50 und Tag Spalte sowie Geburtstag. 
+client_female <- client %>% filter(gender == "female") %>% mutate(birth_number, 
+                                                 year = 
+                                                   as.integer(paste("19", as.character(substr(birth_number, 1, 2)), sep = "")),
+                                                 month = 
+                                                   as.integer(substr(birth_number, 3, 4)) - 50, 
+                                                 day = 
+                                                   as.integer(substr(birth_number, 5, 6)),
+                                                 birth_day = 
+                                                   make_date(year, month, day)) %>% 
+  select(client_id, year, month, day, birth_number = birth_day, district_id, gender)
+
+# Analog fuer Maenner                                                 
+client_male <- client %>% filter(gender == "male") %>% mutate(birth_number, 
+                                                 year = 
+                                                   as.integer(paste("19", as.character(substr(birth_number, 1, 2)), sep = "")),
+                                                 month = 
+                                                   as.integer(substr(birth_number, 3, 4)), 
+                                                 day = 
+                                                   as.integer(substr(birth_number, 5, 6)),
+                                                 birth_day = 
+                                                   make_date(year, month, day)) %>% 
+  select(client_id, year, month, day, birth_number = birth_day, district_id, gender)
+
+# Anzahl Zeilen ueberpruefen, ob diese mit dem Ursprungs DataFrame uebereinstimmen. 
+if (nrow(rbind(client_female, client_male)) == nrow(client))
+  client <- rbind(client_female, client_male)
+
+# Berechnung des Alters auf basisjahr 31.12.1999
+client$age <- age_calc(dob = client$birth_number, enddate = as.Date("1999-12-31"), units = "years", precise = FALSE)
+
+client %>% sample_n(size = 5)
+```
+
+### 1.2.4 disp
+disp hat disp_id, client_id, welches auf cleitn dataframe verweist und account_id, welches auf account Tabelle verweist sowie den typ, wobei nur OWNER einen Dauerauftrag erstellen koennen und Kredite aufnehmen koennen.
+```{r}
+disp %>% sample_n(size = 5)
+```
+
+### 1.2.5 district
+district hat nummerierte Spalten von A1 - A16. Dabei sind die Kurzel jeweils auf der Website aufgelistet fuer was diese stehen. Wir bennen die Spalten um, damit wir eine Ahnung haben, mit was wir arbeiten sollten. 
+
+A1  district_id/district code	
+A2	district name	
+A3	region	
+A4	no. of inhabitants	
+A5	no. of municipalities with inhabitants < 499	
+A6	no. of municipalities with inhabitants 500-1999	
+A7	no. of municipalities with inhabitants 2000-9999	
+A8	no. of municipalities with inhabitants >10000	
+A9	no. of cities	
+A10	ratio of urban inhabitants	
+A11	average salary	
+A12	unemploymant rate '95	
+A13	unemploymant rate '96	
+A14	no. of enterpreneurs per 1000 inhabitants	
+A15	no. of commited crimes '95	
+A16	no. of commited crimes '96
+
+```{r}
+district <- district %>% select(district_id = A1, district_name = A2,
+                    region = A3, num_of_habitat = A4,
+                    num_of_small_town = A5, num_of_medium_town = A6,
+                    num_of_big_town = A7, num_of_bigger_town = A8,
+                    num_of_city = A9, ratio_of_urban = A10,
+                    average_salary = A11, unemploy_rate95 = A12,
+                    unemploy_rate96 = A13, n_of_enterpren_per1000_inhabit = A14,
+                    no_of_crimes95 = A15, no_of_crimes96 = A16)
+
+district %>% sample_n(size = 5)
+```
+
+### 1.2.6 loan
+Loan hat loan_id, account_id (verweis auf account Tabelle), date in YYMMDD Format, amount, duration, payments, status.
+Aendern werden wir payments zu monthly_payments und die Werte von
+status. 
+'A' stands for contract finished, no problems, => contract finished
+'B' stands for contract finished, loan not payed, => finished contract, loan not payed
+'C' stands for running contract, OK so far, => running contract
+'D' stands for running contract, client in debt => client in debt
+
+```{r}
+loan$date <- ymd(loan$date)
+
+loan <- loan %>%
+  mutate(status = case_when(
+    status == 'A' ~ 'contract finished',
+    status == 'B' ~ 'finished contract, loan not paid',
+    status == 'C' ~ 'running contract',
+    status == 'D' ~ 'client in debt',))
+    
+loan %>% sample_n(size = 5)
+```
+
+### 1.2.7 order
+die order Tabelle besteht aus order_id, account_id, bank_to (einzigartige Komibination aus 2 Buchstaben), account_to (zu welchem Account), amount, k_symbol (klassifizierung der Zahlung)
+k_symbol wird auf englisch uebersetzt
+```{r}
+order <- order %>%
+  mutate(k_symbol = case_when(
+    k_symbol == 'POJISTNE' ~ 'INSURRANCE PAYMENT',
+    k_symbol == 'SIPO' ~ 'HOUSHOLD',
+    k_symbol == 'UVER' ~ 'LOAN PAYMENT'))
+
+order %>% sample_n(size = 5)
+
+```
+
+### 1.2.8 trans
+Die trans Tabelle hat trans_id, account_id, date, type, operation, amount und banalce, k_symbol (analog zu order) bank und account
+
+
+type, operation und k_symbol Werte werden auf Englisch uebersetzt
+```{r}
+trans <- trans %>% 
+  mutate(date = ymd(date), 
+         type = case_when(
+           type == 'PRIJEM' ~ 'CREDIT',
+           type == 'VYDAJ' ~ 'WITHDRAWAL'),
+         operation = case_when(
+           operation == 'VYBER KARTOU' ~ 'CREDIT CARD WITHDRAWAL',
+           operation == 'VKLAD' ~ 'CREDIT IN CASH',
+           operation == 'PREVOD Z UCTU' ~ 'COLLECTION FROM ANOTHER BANK',
+           operation == 'VYBER' ~ 'WITHDRAWAL IN CASH',
+           operation == 'PREVOD NA UCET' ~ 'REMITTANCE TO ANOTHER BANK'),
+         k_symbol = case_when(
+           k_symbol == 'POJISTNE' ~ 'INSURRANCE PAYMENT',
+           k_symbol == 'SLUZBY' ~ 'STATEMENT PAYMENT',
+           k_symbol == 'UROK' ~ 'INTEREST CREDITED',
+           k_symbol == 'SANKC. UROK' ~ 'INTERES IF NEGATIVE BALANCE',
+           k_symbol == 'SIPO' ~ 'HOUSHOLD',
+           k_symbol == 'DUCHOD' ~ 'OLD-AGE PENSION',
+           k_symbol == 'UVER' ~ 'LOAN PAYMENT',)
+         )
+
+trans %>% sample_n(size = 5)
+
+```
 
 ## 1.3 Datenqualität mittels eda
+### 1.3.1 account
+
+### 1.3.2 card
+
+### 1.3.3 client
+
+### 1.3.4 disp
+
+### 1.3.5 district
+
+### 1.3.6 loan
+
+### 1.3.7 order
+
+### 1.3.8 trans
 ```{r}
 
 ```
 
 ## 1.4 entfernen von Junior Kreditkarten Kunden
 ```{r}
-
+# bei card Dataframe, type junior entfernen, 
+# gegbenenfalls auch gold oder umaendern. 
 ```
 
 # 2. Kombinieren 

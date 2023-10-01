@@ -19,7 +19,6 @@ Klassifikation in Hinsicht auf personalisierte Werbekampagnen.
 
 # Libraries Laden
 ```{r echo=FALSE}
-install.packages("eeptools")
 library(tidyverse)
 library(tidymodels)
 library(DataExplorer)
@@ -87,6 +86,9 @@ account <- account %>%
 # Datum 
 account$date <- ymd(account$date)
 
+# Zuweisen zur df liste
+data_frames[["account.csv"]] <- account
+
 account %>% sample_n(size = 5)
 ```
 
@@ -98,6 +100,10 @@ Bei card aendern wir das Format in YYMMDD um und ignorierien die Zeit.
 ```{r}
 # Datum formatieren
 card$issued <- as_date(ymd_hms(card$issued))
+
+# Zuweisen zur df Liste
+data_frames[["card.csv"]] <- card
+
 # Df ausgeben
 card %>% sample_n(size = 5)
 ```
@@ -157,6 +163,10 @@ if (nrow(rbind(client_female, client_male)) == nrow(client))
 # Berechnung des Alters auf basisjahr 31.12.1999
 client$age <- age_calc(dob = client$birth_number, enddate = as.Date("1999-12-31"), units = "years", precise = FALSE)
 
+# zuweisen zur df liste
+data_frames[["client.csv"]] <- client
+
+# ausgeben
 client %>% sample_n(size = 5)
 ```
 
@@ -196,6 +206,9 @@ district <- district %>% select(district_id = A1, district_name = A2,
                     unemploy_rate96 = A13, n_of_enterpren_per1000_inhabit = A14,
                     no_of_crimes95 = A15, no_of_crimes96 = A16)
 
+# zuweisen zur df liste
+data_frames[["district.csv"]] <- district
+
 district %>% sample_n(size = 5)
 ```
 
@@ -217,6 +230,9 @@ loan <- loan %>%
     status == 'B' ~ 'finished contract, loan not paid',
     status == 'C' ~ 'running contract',
     status == 'D' ~ 'client in debt',))
+
+# Zuweisen zur df liste
+data_frames[["loan.csv"]] <- loan
     
 loan %>% sample_n(size = 5)
 ```
@@ -230,6 +246,9 @@ order <- order %>%
     k_symbol == 'POJISTNE' ~ 'INSURRANCE PAYMENT',
     k_symbol == 'SIPO' ~ 'HOUSHOLD',
     k_symbol == 'UVER' ~ 'LOAN PAYMENT'))
+
+# zuweisen zur df liste
+data_frames[["order.csv"]] <- order
 
 order %>% sample_n(size = 5)
 
@@ -262,35 +281,77 @@ trans <- trans %>%
            k_symbol == 'UVER' ~ 'LOAN PAYMENT',)
          )
 
+# Zuweisen zur df liste
+data_frames[["trans.csv"]] <- trans
+
 trans %>% sample_n(size = 5)
 
 ```
 
 ## 1.3 Datenqualität mittels eda
-### 1.3.1 account
 
-### 1.3.2 card
+```{r echo=FALSE}
+# Function to perform EDA on a dataframe
+perform_eda <- function(df, df_name) {
+  # Create a data exploration report for the dataframe
+  title <- paste("Exploratory Data Analysis for", df_name)
+  create_report(df, report_title = title)
+  
+  # You can add more EDA steps here, such as additional plots and analysis
+}
 
-### 1.3.3 client
-
-### 1.3.4 disp
-
-### 1.3.5 district
-
-### 1.3.6 loan
-
-### 1.3.7 order
-
-### 1.3.8 trans
-```{r}
-
+# Iterate through the list of dataframes and perform EDA on each
+for (i in 1:length(data_frames)) {
+  df_name <- names(data_frames)[i]  # Get the dataframe name
+  perform_eda(data_frames[[i]], df_name)
+}
 ```
+
+Mittels der Funktion perform_eda() generiert für jedes Dataframe eine Explorative Datenanalyse in html Format. Diese sind unter dem Verzeichnis: eda-dataexplorer-reports zu finden. 
+Wir betrachten nun alle Dateframes vom Dataexplorer und halten unsere Kentnisse in diesem Abschnitt fest. 
+
+account: 
+Account besitzt keine fehlende Werte. Weiter fällt stark auf, dass bei issuance_statement_frequency der meiste vorkommende Wert MONTHLY ISSUANCE ist. 
+
+card:
+card besitzt keine fehlende Werte. Beim Barplot vom Typ sehen wir, dass classic die am häufigsten vertretene Klasse ist. Gefolgt wird diese von Junior und auf dem dritten Platz, mit am wenigsten vorkommenden sind gold.
+
+client:
+client weist keine fehlende Werte im Datensatz auf. Die Altersverteilung ist leicht linksschief. Wir erkennen im korrelationsplot, dass Jahr und Alter korrelieren, was jedoch nicht verwunderlich ist.
+
+disp:
+disp weist keine fehlende Werte im Datensatz auf. Die am meisten vorkommende Variable von type ist OWNER. DISPONENT kommt 1/4 mal weniger vor als OWNER.
+
+district:
+district weist ebenfalls keine fehlende Werte auf. average_salary ist rechtsschief verteilt. 
+
+loan:
+
+order:
+
+trans:
+
 
 ## 1.4 entfernen von Junior Kreditkarten Kunden
 ```{r}
-# bei card Dataframe, type junior entfernen, 
-# gegbenenfalls auch gold oder umaendern. 
+# checken, welche Variabeln vorhanden sind. 
+print(paste("Kartentypen:", unique(card$type)))
+
+# !junior dataframe
+card_clean = subset(card, type != "junior")
+
+# junior dataframe
+card_junior = subset(card, type == "junior")
+
+# Berechne Differenz von rows zwischen card_junior und card
+print(paste("Anzahl entfernte junior Karten:", nrow(card_junior)))
+
+# entfernen von allen disp_id in disp Dataframe, die in card_junior vorkommen.  (1:1)
+disp_clean = subset(disp, !(disp_id %in% unique(card_junior$disp_id)))
+print(paste("Anzahl entfernte disp_id, die von card_junior kommen:", nrow(disp) - nrow(disp_clean)))
+
 ```
+
 
 # 2. Kombinieren 
 Kombinieren der Informationen zu Kunden und Bankdienstleistungen.

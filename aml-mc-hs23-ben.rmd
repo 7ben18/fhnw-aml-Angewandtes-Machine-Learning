@@ -290,7 +290,7 @@ trans %>% sample_n(size = 5)
 
 ## 1.3 Datenqualität mittels eda
 
-```{r echo=FALSE}
+```{r}
 # Function to perform EDA on a dataframe
 perform_eda <- function(df, df_name) {
   # Create a data exploration report for the dataframe
@@ -300,19 +300,34 @@ perform_eda <- function(df, df_name) {
   # You can add more EDA steps here, such as additional plots and analysis
 }
 
-# Iterate through the list of dataframes and perform EDA on each
-for (i in 1:length(data_frames)) {
-  df_name <- names(data_frames)[i]  # Get the dataframe name
-  perform_eda(data_frames[[i]], df_name)
+# Specify your directory path
+path <- "C:/Users/Si Ben Tran/Documents/GitHub/fhnw-aml-Angewandtes-Machine-Learning/eda-dataexplorer-reports"
+
+# Check if directory exists
+if (dir.exists(path)) {
+  # List all files in directory
+  list_of_files <- list.files(path)
+  
+  # Check if directory is empty
+  if (length(list_of_files) == 0) {
+    # Iterate through the list of dataframes and perform EDA on each
+    for (i in 1:length(data_frames)) {
+      df_name <- names(data_frames)[i]  # Get the dataframe name
+      perform_eda(data_frames[[i]], df_name)
+    }
+  } else {
+    cat("Directory is not empty. Not running the EDA code.")
+  }
+} else {
+  cat("Specified path does not exist. Please check the path and try again.")
 }
+
 ```
 
 
 ### 1.3.1 District - Fehlende Werte
 ```{r}
 # Es wurde festgestellt, dass im district DataFrame fehlende Werte bei folgenden Spalten auftrauchen: unemploy_rate_95, no_of_crime95, diese merkt man, das  das convertieren in ein integer datentyp nicht funktioniert. 
-
-
 ```
 
 
@@ -413,6 +428,17 @@ client_disp_card <- left_join(x = client_disp,
 print(paste("Anzahl Zeilen client_disp_card df:", nrow(client_disp_card)))
 client_disp_card %>% sample_n(size = 5)
 ```
+
+```{r}
+client_disp_card 
+
+
+group_by(client_disp_card %>% filter(type.disp=="DISPONENT"), account_id) %>% summarise(n = n()) %>% arrange(desc(n))
+
+
+
+```
+
 
 ```{r}
 # Erweitern den Datensatz noch mit district Dataframe, indem wir einen Left join wieder machen. 
@@ -525,9 +551,6 @@ order_account <- left_join(x = order,
          "k_symbol.order" = "k_symbol") 
 
 order_account 
-
-
-
 ```
 
 ```{r}

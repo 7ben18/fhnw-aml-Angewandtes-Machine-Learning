@@ -515,11 +515,27 @@ client_disp_card_district_account_loan_trans
 
 ```{r}
 # ein account kann mehrere orders haben
-left_join(x = order,
-                                                                 y = account,
-                                                                 by = "account_id") 
+order_account <- left_join(x = order, 
+                          y = account,
+                          by = "account_id") %>% 
+  select(account_id, bank_to, account_to, amount, k_symbol) %>% 
+  rename("bank_to.order" = "bank_to",
+         "account_to.order" = "account_to", 
+         "amount.order" = "amount",
+         "k_symbol.order" = "k_symbol") 
+
+order_account 
+
+
+
 ```
 
+```{r}
+# frames
+client_disp_card_district_account_loan_trans
+
+order_account
+```
 
 
 

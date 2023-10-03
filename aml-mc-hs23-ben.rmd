@@ -174,8 +174,6 @@ client %>% sample_n(size = 5)
 disp hat disp_id, client_id, welches auf client dataframe verweist und account_id, welches auf account Tabelle verweist sowie den typ, wobei nur OWNER einen Dauerauftrag erstellen koennen und Kredite aufnehmen koennen.
 ```{r}
 disp %>% sample_n(size = 5)
-
-
 ```
 
 ### 1.2.5 district
@@ -381,7 +379,14 @@ client_disp <- inner_join(x = client,
          district_id, 
          disp_id, 
          account_id,
-         everything())
+         everything()) %>% 
+  rename("year.client" = "year",
+         "month.client" = "month",
+         "day.client" = "day",
+         "birht_number.client" = "birth_number",
+         "gender.client" = "gender",
+         "age.client" = "age",
+         "type.disp" = "type")
 
 print(paste("Anzahl Zeilen client_disp df:", nrow(client_disp)))
 client_disp %>% sample_n(size = 5)
@@ -401,8 +406,9 @@ client_disp_card <- left_join(x = client_disp,
                               suffix = c("", ".card")) %>% 
   mutate(has_card = !rowSums(is.na(.))) %>% 
   select(-c(client_id, disp_id, card_id)) %>% 
-  rename("disp_type" = "type",
-         "card_type" = "type.card")
+  rename("type.card" = "type",
+         "issued.card" = "issued",
+         "has_card.card" = "has_card")
 
 print(paste("Anzahl Zeilen client_disp_card df:", nrow(client_disp_card)))
 client_disp_card %>% sample_n(size = 5)
@@ -416,7 +422,24 @@ print(paste("Anzahl Zeilen client_disp_card:", nrow(client_disp_card)))
 
 client_disp_card_district <- left_join(client_disp_card,
                                        district,
-                                       by = "district_id")
+                                       by = "district_id") %>% 
+  rename(
+    "district_name.district" = "district_name",
+    "region.district" = "region",
+    "num_of_habitat.district" = "num_of_habitat",
+    "num_of_medium_town.district" = "num_of_medium_town",
+    "num_of_small_town.district" = "num_of_small_town",
+    "num_of_big_town.district" = "num_of_big_town",
+    "num_of_bigger_town.district" = "num_of_bigger_town",
+    "num_of_city.district" = "num_of_city",
+    "ratio_of_urban.district" = "ratio_of_urban",
+    "average_salary.district" = "average_salary",
+    "unemploy_rate95.district" = "unemploy_rate95",
+    "unemploy_rate96.district" = "unemploy_rate96",
+    "n_of_enterpren_per1000_inhabit.district" = "n_of_enterpren_per1000_inhabit",
+    "no_of_crimes95.district" = "no_of_crimes95",
+    "no_of_crimes96.district" = "no_of_crimes96"
+  )
 
 print(paste("Anzahl Zeilen client_disp_card_district df:", nrow(client_disp_card_district)))
 client_disp_card_district %>% sample_n(size = 5)
@@ -424,31 +447,80 @@ client_disp_card_district %>% sample_n(size = 5)
 ```
 
 ```{r}
-# Loan und Account, nicht jeder Account hat einen Kredit.
+# Ein Account kann mehrere disponenten haben. 
+ 
+print(paste("Anzahl Zeilen account df:", nrow(account)))
+print(paste("Anzahl Zeilen client_disp_card_district:", nrow(client_disp_card_district)))
 
-print(paste("Anzahl Zeilen loan df:", nrow(loan)))
-print(paste("Anzahl Zeilen account:", nrow(account)))
+
+client_disp_card_district_account <- left_join(x = account, 
+                                               y = client_disp_card_district,
+                                               by = "account_id") %>% 
+  rename("district_id.account" = "district_id.x",
+         "district_id.client" = "district_id.y",
+         "issuance_statement_frequency.account" = "issuance_statement_frequency",
+         "account_creation_date.account" = "date")
 
 
+print(paste("Anzahl Zeilen client_disp_card_district_account df:", nrow(client_disp_card_district_account)))
+client_disp_card_district_account
+```
+
+
+```{r}
+# Ein account kann ein Kredit haben oder auch nicht. 
 account_loan <- left_join(x = account,
-                          y = loan, 
+                          y = loan,
                           by = "account_id") %>% 
-  mutate(has_loan = !rowSums(is.na(.))) %>% 
-  select(-c(loan_id)) %>% 
-  rename("account_creation_date" = "date.x",
-         "granted_loan_date" = "date.y")
+  mutate(has_loan.loan = !rowSums(is.na(.))) %>% 
+  rename("date.loan" = "date.y",
+         "amount.loan" = "amount",
+         "duration.loan" = "duration",
+         "payments.loan" = "payments",
+         "status.loan" = "status") %>% 
+  select(-c(loan_id, district_id, issuance_statement_frequency, date.x))
 
-print(paste("Anzahl Zeilen account_loan df:", nrow(account_loan)))
-account_loan %>% sample_n(size = 5)
+account_loan
+```
 
+```{r}
+# account_loan mit client_disp_card_district_account joinen
+client_disp_card_district_account_loan <- right_join(x = account_loan,
+                                                     y = client_disp_card_district_account,
+                                                     by = "account_id")
+
+client_disp_card_district_account_loan
+```
+
+```{r}
+# Ein account kann mehrere transaktionen haben
+
+client_disp_card_district_account_loan_trans <- left_join(x = trans,
+                                                          y = client_disp_card_district_account_loan,
+                                                          by = "account_id") %>% 
+  rename("date.trans" = "date",
+         "type.trans" = "type",
+         "operation.trans" = "operation",
+         "amount.trans" = "amount",
+         "balance.trans" = "balance",
+         "k_symbol.trans" = "k_symbol",
+         "bank.trans" = "bank",
+         "account.trans" = "account") %>% 
+  select(-c(trans_id))
+
+client_disp_card_district_account_loan_trans
 
 ```
 
 
 ```{r}
-# Clienten die keinen Account haben? 
-client_disp_card_district
+# ein account kann mehrere orders haben
+left_join(x = order,
+                                                                 y = account,
+                                                                 by = "account_id") 
 ```
+
+
 
 
 # 3. Identifizierung

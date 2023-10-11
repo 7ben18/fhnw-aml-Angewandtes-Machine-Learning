@@ -49,7 +49,7 @@ data_frames <- list()
 for (file_name in file_names) {
   # path definieren
   file_path <- file.path("xselling_banking_data", file_name)
-  
+
   # daten einlesen und in liste speichern
   data_frames[[file_name]] <- read.csv(file_path, header = TRUE, sep = ";")
 }
@@ -79,11 +79,11 @@ account <- account %>%
     frequency == "POPLATEK MESICNE" ~ "MONTHLY ISSUANCE",
     frequency == "POPLATEK TYDNE" ~ "WEEKLY ISSUANCE",
     frequency == "POPLATEK PO OBRATU" ~ " ISSUANCE AFTER TRANSACTION",
-    TRUE ~ frequency  # Keep other values unchanged
-  )) %>% 
+    TRUE ~ frequency # Keep other values unchanged
+  )) %>%
   rename(issuance_statement_frequency = frequency)
 
-# Datum 
+# Datum
 account$date <- ymd(account$date)
 
 # Zuweisen zur df liste
@@ -117,14 +117,14 @@ get_gender <- function(birth_number) {
   year <- as.integer(substr(birth_number, 1, 2))
   month <- as.integer(substr(birth_number, 3, 4))
   day <- as.integer(substr(birth_number, 5, 6))
-  
+
   # Bei Frauen wird der Geburtsmonat um 50 addiert
   if (month > 12) {
     gender <- "female"
   } else {
     gender <- "male"
   }
-  
+
   return(gender)
 }
 
@@ -132,33 +132,40 @@ get_gender <- function(birth_number) {
 client$gender <- sapply(client$birth_number, get_gender)
 
 
-# filter nach Frauen, erstelle jahr (19XX), Monat - 50 und Tag Spalte sowie Geburtstag. 
-client_female <- client %>% filter(gender == "female") %>% mutate(birth_number, 
-                                                 year = 
-                                                   as.integer(paste("19", as.character(substr(birth_number, 1, 2)), sep = "")),
-                                                 month = 
-                                                   as.integer(substr(birth_number, 3, 4)) - 50, 
-                                                 day = 
-                                                   as.integer(substr(birth_number, 5, 6)),
-                                                 birth_day = 
-                                                   make_date(year, month, day)) %>% 
+# filter nach Frauen, erstelle jahr (19XX), Monat - 50 und Tag Spalte sowie Geburtstag.
+client_female <- client %>%
+  filter(gender == "female") %>%
+  mutate(birth_number,
+    year =
+      as.integer(paste("19", as.character(substr(birth_number, 1, 2)), sep = "")),
+    month =
+      as.integer(substr(birth_number, 3, 4)) - 50,
+    day =
+      as.integer(substr(birth_number, 5, 6)),
+    birth_day =
+      make_date(year, month, day)
+  ) %>%
   select(client_id, year, month, day, birth_number = birth_day, district_id, gender)
 
-# Analog fuer Maenner                                                 
-client_male <- client %>% filter(gender == "male") %>% mutate(birth_number, 
-                                                 year = 
-                                                   as.integer(paste("19", as.character(substr(birth_number, 1, 2)), sep = "")),
-                                                 month = 
-                                                   as.integer(substr(birth_number, 3, 4)), 
-                                                 day = 
-                                                   as.integer(substr(birth_number, 5, 6)),
-                                                 birth_day = 
-                                                   make_date(year, month, day)) %>% 
+# Analog fuer Maenner
+client_male <- client %>%
+  filter(gender == "male") %>%
+  mutate(birth_number,
+    year =
+      as.integer(paste("19", as.character(substr(birth_number, 1, 2)), sep = "")),
+    month =
+      as.integer(substr(birth_number, 3, 4)),
+    day =
+      as.integer(substr(birth_number, 5, 6)),
+    birth_day =
+      make_date(year, month, day)
+  ) %>%
   select(client_id, year, month, day, birth_number = birth_day, district_id, gender)
 
-# Anzahl Zeilen ueberpruefen, ob diese mit dem Ursprungs DataFrame uebereinstimmen. 
-if (nrow(rbind(client_female, client_male)) == nrow(client))
+# Anzahl Zeilen ueberpruefen, ob diese mit dem Ursprungs DataFrame uebereinstimmen.
+if (nrow(rbind(client_female, client_male)) == nrow(client)) {
   client <- rbind(client_female, client_male)
+}
 
 # Berechnung des Alters auf basisjahr 31.12.1999
 client$age <- age_calc(dob = client$birth_number, enddate = as.Date("1999-12-31"), units = "years", precise = FALSE)
@@ -197,14 +204,16 @@ A15	no. of commited crimes '95
 A16	no. of commited crimes '96
 
 ```{r}
-district <- district %>% select(district_id = A1, district_name = A2,
-                    region = A3, num_of_habitat = A4,
-                    num_of_small_town = A5, num_of_medium_town = A6,
-                    num_of_big_town = A7, num_of_bigger_town = A8,
-                    num_of_city = A9, ratio_of_urban = A10,
-                    average_salary = A11, unemploy_rate95 = A12,
-                    unemploy_rate96 = A13, n_of_enterpren_per1000_inhabit = A14,
-                    no_of_crimes95 = A15, no_of_crimes96 = A16)
+district <- district %>% select(
+  district_id = A1, district_name = A2,
+  region = A3, num_of_habitat = A4,
+  num_of_small_town = A5, num_of_medium_town = A6,
+  num_of_big_town = A7, num_of_bigger_town = A8,
+  num_of_city = A9, ratio_of_urban = A10,
+  average_salary = A11, unemploy_rate95 = A12,
+  unemploy_rate96 = A13, n_of_enterpren_per1000_inhabit = A14,
+  no_of_crimes95 = A15, no_of_crimes96 = A16
+)
 
 # zuweisen zur df liste
 data_frames[["district.csv"]] <- district
@@ -226,14 +235,15 @@ loan$date <- ymd(loan$date)
 
 loan <- loan %>%
   mutate(status = case_when(
-    status == 'A' ~ 'contract finished',
-    status == 'B' ~ 'finished contract, loan not paid',
-    status == 'C' ~ 'running contract',
-    status == 'D' ~ 'client in debt',))
+    status == "A" ~ "contract finished",
+    status == "B" ~ "finished contract, loan not paid",
+    status == "C" ~ "running contract",
+    status == "D" ~ "client in debt",
+  ))
 
 # Zuweisen zur df liste
 data_frames[["loan.csv"]] <- loan
-    
+
 loan %>% sample_n(size = 5)
 ```
 
@@ -243,15 +253,15 @@ k_symbol wird auf englisch uebersetzt
 ```{r}
 order <- order %>%
   mutate(k_symbol = case_when(
-    k_symbol == 'POJISTNE' ~ 'INSURRANCE PAYMENT',
-    k_symbol == 'SIPO' ~ 'HOUSHOLD',
-    k_symbol == 'UVER' ~ 'LOAN PAYMENT'))
+    k_symbol == "POJISTNE" ~ "INSURRANCE PAYMENT",
+    k_symbol == "SIPO" ~ "HOUSHOLD",
+    k_symbol == "UVER" ~ "LOAN PAYMENT"
+  ))
 
 # zuweisen zur df liste
 data_frames[["order.csv"]] <- order
 
 order %>% sample_n(size = 5)
-
 ```
 
 ### 1.2.8 trans
@@ -260,32 +270,35 @@ Die trans Tabelle hat trans_id, account_id, date, type, operation, amount und ba
 
 type, operation und k_symbol Werte werden auf Englisch uebersetzt
 ```{r}
-trans <- trans %>% 
-  mutate(date = ymd(date), 
-         type = case_when(
-           type == 'PRIJEM' ~ 'CREDIT',
-           type == 'VYDAJ' ~ 'WITHDRAWAL'),
-         operation = case_when(
-           operation == 'VYBER KARTOU' ~ 'CREDIT CARD WITHDRAWAL',
-           operation == 'VKLAD' ~ 'CREDIT IN CASH',
-           operation == 'PREVOD Z UCTU' ~ 'COLLECTION FROM ANOTHER BANK',
-           operation == 'VYBER' ~ 'WITHDRAWAL IN CASH',
-           operation == 'PREVOD NA UCET' ~ 'REMITTANCE TO ANOTHER BANK'),
-         k_symbol = case_when(
-           k_symbol == 'POJISTNE' ~ 'INSURRANCE PAYMENT',
-           k_symbol == 'SLUZBY' ~ 'STATEMENT PAYMENT',
-           k_symbol == 'UROK' ~ 'INTEREST CREDITED',
-           k_symbol == 'SANKC. UROK' ~ 'INTERES IF NEGATIVE BALANCE',
-           k_symbol == 'SIPO' ~ 'HOUSHOLD',
-           k_symbol == 'DUCHOD' ~ 'OLD-AGE PENSION',
-           k_symbol == 'UVER' ~ 'LOAN PAYMENT',)
-         )
+trans <- trans %>%
+  mutate(
+    date = ymd(date),
+    type = case_when(
+      type == "PRIJEM" ~ "CREDIT",
+      type == "VYDAJ" ~ "WITHDRAWAL"
+    ),
+    operation = case_when(
+      operation == "VYBER KARTOU" ~ "CREDIT CARD WITHDRAWAL",
+      operation == "VKLAD" ~ "CREDIT IN CASH",
+      operation == "PREVOD Z UCTU" ~ "COLLECTION FROM ANOTHER BANK",
+      operation == "VYBER" ~ "WITHDRAWAL IN CASH",
+      operation == "PREVOD NA UCET" ~ "REMITTANCE TO ANOTHER BANK"
+    ),
+    k_symbol = case_when(
+      k_symbol == "POJISTNE" ~ "INSURRANCE PAYMENT",
+      k_symbol == "SLUZBY" ~ "STATEMENT PAYMENT",
+      k_symbol == "UROK" ~ "INTEREST CREDITED",
+      k_symbol == "SANKC. UROK" ~ "INTERES IF NEGATIVE BALANCE",
+      k_symbol == "SIPO" ~ "HOUSHOLD",
+      k_symbol == "DUCHOD" ~ "OLD-AGE PENSION",
+      k_symbol == "UVER" ~ "LOAN PAYMENT",
+    )
+  )
 
 # Zuweisen zur df liste
 data_frames[["trans.csv"]] <- trans
 
 trans %>% sample_n(size = 5)
-
 ```
 
 ## 1.3 Datenqualität mittels eda
@@ -296,23 +309,23 @@ perform_eda <- function(df, df_name) {
   # Create a data exploration report for the dataframe
   title <- paste("Exploratory Data Analysis for", df_name)
   create_report(df, report_title = title)
-  
+
   # You can add more EDA steps here, such as additional plots and analysis
 }
 
 # Specify your directory path
-path <- "C:/Users/Si Ben Tran/Documents/GitHub/fhnw-aml-Angewandtes-Machine-Learning/eda-dataexplorer-reports"
+path <- "eda-dataexplorer-reports"
 
 # Check if directory exists
 if (dir.exists(path)) {
   # List all files in directory
   list_of_files <- list.files(path)
-  
+
   # Check if directory is empty
   if (length(list_of_files) == 0) {
     # Iterate through the list of dataframes and perform EDA on each
     for (i in 1:length(data_frames)) {
-      df_name <- names(data_frames)[i]  # Get the dataframe name
+      df_name <- names(data_frames)[i] # Get the dataframe name
       perform_eda(data_frames[[i]], df_name)
     }
   } else {
@@ -321,15 +334,23 @@ if (dir.exists(path)) {
 } else {
   cat("Specified path does not exist. Please check the path and try again.")
 }
-
 ```
 
 
 ### 1.3.1 District - Fehlende Werte
 ```{r}
-# Es wurde festgestellt, dass im district DataFrame fehlende Werte bei folgenden Spalten auftrauchen: unemploy_rate_95, no_of_crime95, diese merkt man, das  das convertieren in ein integer datentyp nicht funktioniert. 
-```
+district$unemploy_rate95 <- as.numeric(district$unemploy_rate95)
+district$no_of_crimes95 <- as.numeric(district$no_of_crimes95)
 
+plot_missing(district)
+
+# For missing value in unemploy_rate95, we will replace it with the mean of the column
+district$unemploy_rate95[is.na(district$unemploy_rate95)] <- mean(district$unemploy_rate95, na.rm = TRUE)
+district$no_of_crimes95[is.na(district$no_of_crimes95)] <- mean(district$no_of_crimes95, na.rm = TRUE)
+
+plot_missing(district)
+# Es wurde festgestellt, dass im district DataFrame fehlende Werte bei folgenden Spalten auftrauchen: unemploy_rate_95, no_of_crime95, diese merkt man, das  das convertieren in ein integer datentyp nicht funktioniert.
+```
 
 Mittels der Funktion perform_eda() generiert für jedes Dataframe eine Explorative Datenanalyse in html Format. Diese sind unter dem Verzeichnis: eda-dataexplorer-reports zu finden. 
 Wir betrachten nun alle Dateframes vom Dataexplorer und halten unsere Kentnisse in diesem Abschnitt fest. 
@@ -358,20 +379,20 @@ trans:
 
 ## 1.4 entfernen von Junior Kreditkarten Kunden
 ```{r}
-# checken, welche Variabeln vorhanden sind. 
+# checken, welche Variabeln vorhanden sind.
 print(paste("Kartentypen:", unique(card$type)))
 
 # !junior dataframe
-card_clean = subset(card, type != "junior")
+card_clean <- subset(card, type != "junior")
 
 # junior dataframe
-card_junior = subset(card, type == "junior")
+card_junior <- subset(card, type == "junior")
 
 # Berechne Differenz von rows zwischen card_junior und card
 print(paste("Anzahl entfernte junior Karten:", nrow(card_junior)))
 
 # entfernen von allen disp_id in disp Dataframe, die in card_junior vorkommen.  (1:1)
-disp_clean = subset(disp, !(disp_id %in% unique(card_junior$disp_id)))
+disp_clean <- subset(disp, !(disp_id %in% unique(card_junior$disp_id)))
 print(paste("Anzahl entfernte disp_id, die von card_junior kommen:", nrow(disp) - nrow(disp_clean)))
 ```
 
@@ -381,74 +402,244 @@ Kombinieren der Informationen zu Kunden und Bankdienstleistungen.
 
 Durch unsere Skizze die unter als "skizze-tabelle-joinen" abgelegt wurde, wissen wir nun wie die Tabellen miteinander verknuepft sind und konnen so einen Datensatz von Kunden und einen Datensatz von Bankdienstleistungen erstellen.  
 ```{r}
-# client und disp weisen eine 1:1 relation auf client_id auf. 
+# client und disp weisen eine 1:1 relation auf client_id auf.
 print(paste("Anzahl Zeilen client df:", nrow(client)))
 print(paste("Anzahl Zeilen disp df:", nrow(disp)))
 
-# inner join by client_id 
-client_disp <- inner_join(x = client, 
-                          y = disp, 
-                          by = "client_id", 
-                          suffix = c(".client", ".disp")) %>%
-  select(client_id, 
-         district_id, 
-         disp_id, 
-         account_id,
-         everything()) %>% 
-  rename("year.client" = "year",
-         "month.client" = "month",
-         "day.client" = "day",
-         "birht_number.client" = "birth_number",
-         "gender.client" = "gender",
-         "age.client" = "age",
-         "type.disp" = "type")
+# inner join by client_id
+client_disp <- inner_join(
+  x = client,
+  y = disp,
+  by = "client_id",
+  suffix = c(".client", ".disp")
+) %>%
+  select(
+    client_id,
+    district_id,
+    disp_id,
+    account_id,
+    everything()
+  ) %>%
+  rename(
+    "year.client" = "year",
+    "month.client" = "month",
+    "day.client" = "day",
+    "birht_number.client" = "birth_number",
+    "gender.client" = "gender",
+    "age.client" = "age",
+    "type.disp" = "type"
+  )
 
 print(paste("Anzahl Zeilen client_disp df:", nrow(client_disp)))
 client_disp %>% sample_n(size = 5)
-
 ```
+
+```{r}
+ggplot(client_disp, aes(x = age.client, 
+                        color = gender.client)) + 
+  geom_histogram(alpha = 0.5, 
+                 fill = "white") + 
+  labs(title = "Verteilung von Alter unterteilt nach Geschlecht und Typ", 
+       x = "Alter", 
+       y = "Anzahl") + 
+  facet_wrap(~ type.disp)
+```
+
+
 ```{r}
 # Weiter joinen wir client_disp und card mit disp_id. Auch hier besteht eine 1:1 Beziehung.
 
-# Wir erkennen jedoch, dass es clienten gibt, die keine Karte besitzen. aus diesem Grund 
+# Wir erkennen jedoch, dass es clienten gibt, die keine Karte besitzen. aus diesem Grund
 
 print(paste("Anzahl Zeilen card df:", nrow(card_clean)))
 
-# left join 
-client_disp_card <- left_join(x = client_disp,
-                              y = card_clean,
-                              by = "disp_id",
-                              suffix = c("", ".card")) %>% 
-  mutate(has_card = !rowSums(is.na(.))) %>% 
-  select(-c(client_id, disp_id, card_id)) %>% 
-  rename("type.card" = "type",
-         "issued.card" = "issued",
-         "has_card.card" = "has_card")
+# left join
+client_disp_card <- left_join(
+  x = client_disp,
+  y = card_clean,
+  by = "disp_id",
+  suffix = c("", ".card")
+) %>%
+  mutate(has_card = !rowSums(is.na(.))) %>%
+  select(-c(client_id, disp_id, card_id)) %>%
+  rename(
+    "type.card" = "type",
+    "issued.card" = "issued",
+    "has_card.card" = "has_card"
+  )
 
 print(paste("Anzahl Zeilen client_disp_card df:", nrow(client_disp_card)))
 client_disp_card %>% sample_n(size = 5)
 ```
 
 ```{r}
-client_disp_card 
+ggplot(client_disp_card, aes(x = age.client, 
+                             color = has_card.card)) + 
+  geom_histogram(alpha = 0.5, 
+                 fill = "white") + 
+  labs(title = "Verteilung von Alter unterteilt nach Kartentyp und Art", x = "Alter", y = "Anzahl") + 
+  facet_grid(type.card ~ type.disp)
+```
+
+Aus der Visualisierung erkennen wir, dass keine Disponenten existieren die eine Karte besitzen. Aus diesem Grund filtern wir unseren Datensatz nur nach Owner, da wir diesen Personen eine Karte anbieten, bzw Karten wie classic oder gold besitzen. 
+
+```{r}
+# Filtern nach type.disp == "OWNER"
+print(paste("Anzahl entfernte Zeilen von client_disp_card df:", nrow(client_disp_card) - nrow(client_disp_card %>% filter(type.disp == "OWNER"))))
+
+client_disp_card <- client_disp_card %>% filter(type.disp == "OWNER")
+client_disp_card %>% sample_n(size = 5)
+```
+
+```{r}
+# Ein Account kann mehrere disponenten haben.
+
+print(paste("Anzahl Zeilen account df:", nrow(account)))
+print(paste("Anzahl Zeilen client_disp_card:", nrow(client_disp_card)))
 
 
-group_by(client_disp_card %>% filter(type.disp=="DISPONENT"), account_id) %>% summarise(n = n()) %>% arrange(desc(n))
+client_disp_card_account <- left_join(
+  x = account,
+  y = client_disp_card,
+  by = "account_id"
+) %>%
+  rename(
+    "district_id.account" = "district_id.x",
+    "district_id.client" = "district_id.y",
+    "issuance_statement_frequency.account" = "issuance_statement_frequency",
+    "account_creation_date.account" = "date")
 
 
+print(paste("Anzahl Zeilen client_disp_card_account df:", nrow(client_disp_card_account)))
+client_disp_card_account
+```
+
+
+Wir betrachten hier nun account und loan getrennt von unserem gejointen Dataframe. Erst in einem zweiten Schritt joinen wir beide Dataframes dann miteinander. 
+
+```{r}
+num_of_loan_df <- loan %>% 
+    group_by(account_id) %>% 
+    summarize(num_of_loan = n()) %>% 
+    arrange(desc(num_of_loan))
+
+num_of_loan_df
+
+loan <- inner_join(x = loan,
+           y = num_of_loan_df,
+           by = "account_id")
+
+loan
 
 ```
 
 
+
 ```{r}
-# Erweitern den Datensatz noch mit district Dataframe, indem wir einen Left join wieder machen. 
+# Ein account kann ein Kredit haben oder auch nicht.
+account_loan <- left_join(
+  x = account,
+  y = loan,
+  by = "account_id"
+) %>%
+  mutate(has_loan.loan = !rowSums(is.na(.))) %>%
+  rename(
+    "date.loan" = "date.y",
+    "amount.loan" = "amount",
+    "duration.loan" = "duration",
+    "payments.loan" = "payments",
+    "status.loan" = "status",
+    "num_of_loan.loan" = "num_of_loan"
+  ) %>%
+  select(-c(loan_id, district_id, issuance_statement_frequency, date.x))
+
+account_loan
+```
+
+Wir betrachten hier nun account und loan getrennt von unserem gejointen Dataframe. Erst in einem zweiten Schritt joinen account_loan und client_disp_card_account mit der Spalte account_id zusammen und fuehren eine kurze explorative Datenanalyse durch. 
+
+```{r, warning=FALSE}
+sample_n(account_loan, size = 1000) %>% 
+  ggplot(aes(x = amount.loan,
+             y = payments.loan,
+             shape = as.factor(duration.loan),
+             color = status.loan)) + 
+  geom_point(alpha = 1) + 
+  labs(title = "Zahlung vs. Menge Kredit, unterteilt nach Dauer und",
+       x = "Kreditmenge",
+       y = "Zahlung")
+```
+
+Interessant zu sehen ist, dass die meisten Kredite schon abbezahlt wurden die eine Dauer von 12 Monaten aufweisen. 
+
+```{r}
+# account_loan mit client_disp_card_district_account joinen
+client_disp_card_account_loan <- right_join(
+  x = account_loan,
+  y = client_disp_card_account,
+  by = "account_id"
+)
+
+print(paste("Anzahl Zeilen client_disp_card_account df:", nrow(client_disp_card_account_loan)))
+client_disp_card_account_loan
+```
+
+Was uns nun intressiert ist der Zusammenhang zwischen eine Karte zu besitzen und einen Kredit aufzuweisen. 
+
+```{r}
+client_disp_card_district_account_loan %>% 
+  ggplot(aes(x = has_loan.loan,
+             fill = has_card.card)) + 
+  geom_bar(position = "dodge") + 
+  labs(title = "Barplot",
+       x = "Kredit",
+       y = "Anzahl")
+```
+
+Es gibt Kunden die eine Karte haen und einen Kredit, analog gibt es auch Kunden die keine Karte haben, aber einen Kredit oder nicht. Somit behalten wir in unserem Datensatz die Kundschaft bei.
+
+
+```{r}
+length(unique(client_disp_card_district_account_loan$account_id))
+```
+
+```{r}
+order
+```
+
+
+```{r}
+# ENTWURF
+
+# ein account kann mehrere orders haben
+order_account <- left_join(
+  x = order,
+  y = account,
+  by = "account_id"
+) %>%
+  select(account_id, bank_to, account_to, amount, k_symbol) %>%
+  rename(
+    "bank_to.order" = "bank_to",
+    "account_to.order" = "account_to",
+    "amount.order" = "amount",
+    "k_symbol.order" = "k_symbol"
+  )
+
+order_account
+```
+
+```{r}
+# ENTWURF
+
+# Erweitern den Datensatz noch mit district Dataframe, indem wir einen Left join wieder machen.
 
 print(paste("Anzahl Zeilen district df:", nrow(district)))
 print(paste("Anzahl Zeilen client_disp_card:", nrow(client_disp_card)))
 
 client_disp_card_district <- left_join(client_disp_card,
-                                       district,
-                                       by = "district_id") %>% 
+  district,
+  by = "district_id"
+) %>%
   rename(
     "district_name.district" = "district_name",
     "region.district" = "region",
@@ -469,97 +660,7 @@ client_disp_card_district <- left_join(client_disp_card,
 
 print(paste("Anzahl Zeilen client_disp_card_district df:", nrow(client_disp_card_district)))
 client_disp_card_district %>% sample_n(size = 5)
-
 ```
-
-```{r}
-# Ein Account kann mehrere disponenten haben. 
- 
-print(paste("Anzahl Zeilen account df:", nrow(account)))
-print(paste("Anzahl Zeilen client_disp_card_district:", nrow(client_disp_card_district)))
-
-
-client_disp_card_district_account <- left_join(x = account, 
-                                               y = client_disp_card_district,
-                                               by = "account_id") %>% 
-  rename("district_id.account" = "district_id.x",
-         "district_id.client" = "district_id.y",
-         "issuance_statement_frequency.account" = "issuance_statement_frequency",
-         "account_creation_date.account" = "date")
-
-
-print(paste("Anzahl Zeilen client_disp_card_district_account df:", nrow(client_disp_card_district_account)))
-client_disp_card_district_account
-```
-
-
-```{r}
-# Ein account kann ein Kredit haben oder auch nicht. 
-account_loan <- left_join(x = account,
-                          y = loan,
-                          by = "account_id") %>% 
-  mutate(has_loan.loan = !rowSums(is.na(.))) %>% 
-  rename("date.loan" = "date.y",
-         "amount.loan" = "amount",
-         "duration.loan" = "duration",
-         "payments.loan" = "payments",
-         "status.loan" = "status") %>% 
-  select(-c(loan_id, district_id, issuance_statement_frequency, date.x))
-
-account_loan
-```
-
-```{r}
-# account_loan mit client_disp_card_district_account joinen
-client_disp_card_district_account_loan <- right_join(x = account_loan,
-                                                     y = client_disp_card_district_account,
-                                                     by = "account_id")
-
-client_disp_card_district_account_loan
-```
-
-```{r}
-# Ein account kann mehrere transaktionen haben
-
-client_disp_card_district_account_loan_trans <- left_join(x = trans,
-                                                          y = client_disp_card_district_account_loan,
-                                                          by = "account_id") %>% 
-  rename("date.trans" = "date",
-         "type.trans" = "type",
-         "operation.trans" = "operation",
-         "amount.trans" = "amount",
-         "balance.trans" = "balance",
-         "k_symbol.trans" = "k_symbol",
-         "bank.trans" = "bank",
-         "account.trans" = "account") %>% 
-  select(-c(trans_id))
-
-client_disp_card_district_account_loan_trans
-
-```
-
-
-```{r}
-# ein account kann mehrere orders haben
-order_account <- left_join(x = order, 
-                          y = account,
-                          by = "account_id") %>% 
-  select(account_id, bank_to, account_to, amount, k_symbol) %>% 
-  rename("bank_to.order" = "bank_to",
-         "account_to.order" = "account_to", 
-         "amount.order" = "amount",
-         "k_symbol.order" = "k_symbol") 
-
-order_account 
-```
-
-```{r}
-# frames
-client_disp_card_district_account_loan_trans
-
-order_account
-```
-
 
 
 # 3. Identifizierung

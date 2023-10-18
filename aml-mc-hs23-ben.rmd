@@ -25,7 +25,6 @@ library(DataExplorer)
 library(lubridate)
 library(eeptools)
 library(zoo)
-
 ```
 
 
@@ -269,7 +268,9 @@ loan %>% sample_n(size = 5)
 die order Tabelle besteht aus order_id, account_id, bank_to (einzigartige Komibination aus 2 Buchstaben), account_to (zu welchem Account), amount, k_symbol (klassifizierung der Zahlung)
 k_symbol wird auf englisch uebersetzt
 
-Ein account kann mehrere Orders haben, um spaeter einfacher joinen zu koenen versuchen wir urch aggregieren nach account_id die Summe, Mittelwert, Median Ausgaben zu erhalten. Bei den Kategorischen Spalte k_symbol versuchen wir diese One-Hot zu encoden. 
+Da es accounts gibt die keine Orders haben, versuchen wir den Order Datensatz zu erweitern, indem wir von account, account_id einen left join machen. Somit erhalten wir alle account auch diejenigen die keine order besitzen. Diese haben NA Werte, welche wir dann mit 0 beim Amount und "UNKOWN" bei k_symbol ersetzen.
+
+Ein account kann mehrere Orders haben, um spaeter einfacher joinen zu koenen versuchen wir durch aggregieren nach account_id die Summe, Mittelwert, Median Ausgaben zu erhalten. Bei den Kategorischen Spalte k_symbol versuchen wir diese One-Hot zu encoden. 
 ```{r wrangle order}
 order <- order %>%
   mutate(k_symbol = case_when(
@@ -280,6 +281,23 @@ order <- order %>%
 
 order$k_symbol[is.na(order$k_symbol)] <- "UNKOWN"
 
+
+# create a dataframe that contains all account_id from account
+account_id_df <- account %>%
+  select(account_id)
+
+# make a left join with order, every account that doesnt have an order will have NA values
+order <- left_join(
+  x = account_id_df,
+  y = order,
+  by = "account_id"
+) %>% # create a column has_order if the row is complete
+  mutate(has_order = !rowSums(is.na(.))) # if k_symbol NA then replace with "UNKOWN"
+
+order$k_symbol[is.na(order$k_symbol)] <- "UNKOWN"
+
+order$amount[is.na(order$amount)] <- 0
+
 # Aggregating amount
 aggregated_amount <- order %>%
   group_by(account_id) %>%
@@ -289,11 +307,14 @@ aggregated_amount <- order %>%
     median_amount = median(amount, na.rm = TRUE),
     min_amount = min(amount, na.rm = TRUE),
     max_amount = max(amount, na.rm = TRUE),
-    num_of_orders = n()
+    num_of_orders = sum(amount != 0) # Count non-zero orders
   )
 
-aggregated_amount
 
+# create a column has_order if the sum_amount is 0 == False
+aggregated_amount$has_order <- aggregated_amount$sum_amount != 0
+
+aggregated_amount
 
 # Creating dummies
 dummies_k_symbol <- order %>%
@@ -315,6 +336,7 @@ data_frames[["order.csv"]] <- order
 
 order %>% sample_n(size = 5)
 ```
+
 
 ### 1.2.8 trans
 Die trans Tabelle hat trans_id, account_id, date, type, operation, amount und banalce, k_symbol (analog zu order) bank und account
@@ -771,7 +793,9 @@ client_disp_card_account_loan %>%
 
 ## 2.7 +order
 
-Von unseren Urspruenglichen 4500 Zeilen, bzw Kunden hat nicht jeder Kunde ein Order betaetigt. Somit entfallen beim Inner Joinen einige Kunden, die jedoch nicht relevant fuer uns sind.
+Durch den Inner join mit order haben wir weiterhin die gleiche Anzahl Kunden.
+
+
 ```{r +order}
 # inner join by account_id client_disp_card_district_account_loan und order
 
@@ -783,18 +807,20 @@ client_disp_card_account_loan_order <- inner_join(
   x = client_disp_card_account_loan,
   y = order,
   by = "account_id"
-) %>% rename(
-  "sum_amount.order" = "sum_amount", 
-  "mean_amount.order" = "mean_amount",
-  "median_amount.order" = "median_amount",
-  "min_amount.order" = "min_amount",
-  "max_amount.order" = "max_amount",
-  "num_of_orders.order" = "num_of_orders",
-  "num_insurrance_payment.order" = "INSURRANCE PAYMENT",
-  "num_household.order" = "HOUSHOLD",
-  "num_loan_payment.order" = "LOAN PAYMENT",
-  "num_unkown.order" = "UNKOWN"
-) %>% 
+) %>%
+  rename(
+    "sum_amount.order" = "sum_amount",
+    "mean_amount.order" = "mean_amount",
+    "median_amount.order" = "median_amount",
+    "min_amount.order" = "min_amount",
+    "max_amount.order" = "max_amount",
+    "num_of_orders.order" = "num_of_orders",
+    "num_insurrance_payment.order" = "INSURRANCE PAYMENT",
+    "num_household.order" = "HOUSHOLD",
+    "num_loan_payment.order" = "LOAN PAYMENT",
+    "num_unkown.order" = "UNKOWN",
+    "has_order.order" = "has_order"
+  ) %>%
   arrange(account_id)
 
 print(paste("Anzahl entfernte Zeilen von client_disp_card_account_loan df:", nrow(client_disp_card_account_loan) - nrow(client_disp_card_account_loan_order)))
@@ -829,14 +855,14 @@ client_disp_card_account_loan_order_district <- left_join(client_disp_card_accou
     "n_of_enterpren_per1000_inhabit.district" = "n_of_enterpren_per1000_inhabit",
     "no_of_crimes95.district" = "no_of_crimes95",
     "no_of_crimes96.district" = "no_of_crimes96"
-  ) %>% 
+  ) %>%
   select(-c(district_id))
 
 print(paste("Anzahl Zeilen client_disp_card_account_loan_order_district df:", nrow(client_disp_card_account_loan_order_district)))
 
-client_disp_card_account_loan_order_district 
-
 data <- client_disp_card_account_loan_order_district
+
+data
 ```
 
 ## 2.9 +trans?
@@ -847,19 +873,19 @@ Ein Account kann mehrere Transaktionen gemacht haben.
 - OneHotEncoding fuer Kategorische
 
 ```{r +trans?}
-trans <- trans %>% 
-  select(-c(trans_id, account, bank)) %>% 
+trans <- trans %>%
+  select(-c(trans_id, account, bank)) %>%
   arrange(account_id)
 trans
 ```
 
 
 ```{r}
-# filter in trans dataframe for account_id = 1 and 2 
+# filter in trans dataframe for account_id = 1 and 2
 trans_1_and_2 <- trans %>% filter(account_id %in% c(1, 2))
 
 # Calculating 30-day rolling mean
-trans_1_and_2 <- trans_1_and_2 %>% 
+trans_1_and_2 <- trans_1_and_2 %>%
   arrange(account_id, date) %>%
   group_by(account_id) %>%
   mutate(rolling_mean = rollmean(balance, k = 30, fill = NA, align = "center"))
@@ -869,22 +895,25 @@ trans_1_and_2
 
 # Create a time lineplot, where on the x axis is the date and y axis balance and amount.
 ggplot(trans_1_and_2, aes(x = date)) +
-  geom_line(aes(y = balance, 
-                color = as.factor(account_id), 
-                alpha = 0.5, 
-                linetype = "dashed")) +
-  geom_line(aes(y = rolling_mean, 
-                color = as.factor(account_id)), 
-            linetype = "solid") +
+  geom_line(aes(
+    y = balance,
+    color = as.factor(account_id),
+    alpha = 0.5,
+    linetype = "dashed"
+  )) +
+  geom_line(
+    aes(
+      y = rolling_mean,
+      color = as.factor(account_id)
+    ),
+    linetype = "solid"
+  ) +
   labs(
     title = "Balance and 30-Day Rolling Mean Over Time",
     x = "Date",
     y = "Balance",
     color = "Account ID"
-  ) 
-
-
-
+  )
 ```
 
 ```{r}

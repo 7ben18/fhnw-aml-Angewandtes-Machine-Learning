@@ -403,8 +403,9 @@ district$no_of_crimes95 <- as.numeric(district$no_of_crimes95)
 plot_missing(district)
 
 # Imputation mittels mean
-district$unemploy_rate95[is.na(district$unemploy_rate95)] <- mean(district$unemploy_rate95, na.rm = TRUE)
-district$no_of_crimes95[is.na(district$no_of_crimes95)] <- mean(district$no_of_crimes95, na.rm = TRUE)
+district$unemploy_rate95[is.na(district$unemploy_rate95)] <- median(district$unemploy_rate95, na.rm = TRUE)
+
+district$no_of_crimes95[is.na(district$no_of_crimes95)] <- median(district$no_of_crimes95, na.rm = TRUE)
 
 # fehlende Werte nach imputation plotten
 plot_missing(district)
@@ -472,8 +473,9 @@ order:
 
 trans:
 
+## 1.4 Junioren entfernen
 
-## 1.4 entfernen von Junior Kreditkarten Kunden
+### 1.4.1 entfernen von Junior Kreditkarten Kunden
 ```{r remove junior card}
 # checken, welche Variabeln vorhanden sind.
 print(paste("Kartentypen:", unique(card$type)))
@@ -492,6 +494,99 @@ disp_clean <- subset(disp, !(disp_id %in% unique(card_junior$disp_id)))
 print(paste("Anzahl entfernte disp_id, die von card_junior kommen:", nrow(disp) - nrow(disp_clean)))
 ```
 
+### 1.4.2 entfernen von junge Kunden
+
+Wir untersuchen die Junioren genauer indem wir eine Visualisierung erstellen, indem wir die Altersverteilungen der Kunden sehen aufgrund dessen, welche Karten sie besitzen. 
+Dazu muessen wir schon einige Tabellen miteinander joinen um dies tun zu koennen. 
+Weiter haben wir eine Statistische Auswertung des Alters gemacht, indem wir nach card.type gruppieren und das jeweilige Alter aggregieren. Es stellt sich heraus, das die aelteste Person 25 Jahre Alt ist und eine junior Karte bestizt. Da wir in unserem Modell nicht die Junioren ansprechen wollen, entfernen wir zusaetzlich noch alle Kunden die juenger als 26 sind. Relevant bleiben uns somit nur die accounts_id die ueber 25 Jahre alt sind. 
+
+```{r}
+# inner join by client_id
+client_disp <- inner_join(
+  x = client,
+  y = disp,
+  by = "client_id",
+  suffix = c(".client", ".disp")
+) %>%
+  select(
+    client_id,
+    district_id,
+    disp_id,
+    account_id,
+    everything()
+  ) %>%
+  rename(
+    "year.client" = "year",
+    "month.client" = "month",
+    "day.client" = "day",
+    "birht_number.client" = "birth_number",
+    "gender.client" = "gender",
+    "age.client" = "age",
+    "type.disp" = "type"
+  )
+
+# left join
+client_disp_card <- left_join(
+  x = client_disp,
+  y = card,
+  by = "disp_id",
+  suffix = c("", ".card")
+) %>%
+  mutate(has_card = !rowSums(is.na(.))) %>%
+  select(-c(disp_id, card_id)) %>%
+  rename(
+    "type.card" = "type",
+    "issued.card" = "issued",
+    "has_card.card" = "has_card"
+  )
+
+client_disp_card
+
+# create age distribution and color them with type.card
+ggplot(client_disp_card, aes(
+  x = age.client,
+  color = type.card
+)) +
+  geom_histogram(
+    alpha = 0.5,
+    fill = "white"
+  ) +
+  labs(title = "Verteilung von Alter unterteilt nach Kartentyp", x = "Alter", y = "Anzahl") +
+  facet_wrap(~type.card)
+
+# get statistical information grouped by type.card for age
+client_disp_card %>%
+  group_by(type.card) %>%
+  summarize(
+    mean_age = mean(age.client),
+    median_age = median(age.client),
+    min_age = min(age.client),
+    max_age = max(age.client),
+    quantile_75 = quantile(age.client, 0.75)
+  )
+
+# create boxplot for age distribution, for each card.type
+ggplot(client_disp_card, aes(
+  x = type.card,
+  y = age.client,
+  color = type.card
+)) +
+  geom_boxplot() +
+  labs(title = "Verteilung von Alter unterteilt nach Kartentyp", x = "Kartentyp", y = "Alter")
+
+# remove all junior in type.card but keep NA
+client_disp_card_rm_junior <- client_disp_card %>%
+  filter(type.card != "junior" | is.na(type.card))
+
+# get all account_ids that are older than 25 years old
+client_ids_older_than_25 <- client_disp_card_rm_junior %>%
+  filter(age.client > 25) %>%
+  select(client_id)
+
+client_ids_older_than_25
+```
+
+
 
 # 2. Kombinieren 
 Kombinieren der Informationen zu Kunden und Bankdienstleistungen.
@@ -506,6 +601,13 @@ Wir innen joinen client und disp mit client_id, renamen die Spaltenamen und füg
 # client und disp weisen eine 1:1 relation auf client_id auf.
 print(paste("Anzahl Zeilen client df:", nrow(client)))
 print(paste("Anzahl Zeilen disp df:", nrow(disp)))
+
+# Inner join client with client_ids_older_than_25 to remove junior and clients age <= 25
+client <- inner_join(
+  x = client,
+  y = client_ids_older_than_25,
+  by = "client_id"
+)
 
 # inner join by client_id
 client_disp <- inner_join(
@@ -532,7 +634,7 @@ client_disp <- inner_join(
   )
 
 print(paste("Anzahl Zeilen client_disp df:", nrow(client_disp)))
-client_disp %>% sample_n(size = 5)
+client_disp 
 ```
 
 ### 2.1.1 gender vs. type
@@ -916,30 +1018,150 @@ ggplot(trans_1_and_2, aes(x = date)) +
   )
 ```
 
-```{r}
-
-```
-
-
 
 # 3. Identifizierung
 Identifizieren bestehender Kreditkartenkäufer inkl. Bestimmung des
 Kaufdatums und Rollup-Fensters, definiert durch 1 Monat Lag und 12
 Monate History vor Kreditkartenkauf.
 
+## 3.1 Identifizierung bestehender Kreditkartenkaeufer und Kaufdatum
+
 ```{r}
+# create a dataframe where has_card.card == TRUE 
+account_ids_has_card <- data %>%
+  filter(has_card.card == TRUE) %>%
+  select(account_id, issued.card) %>% 
+  rename("kaufdatum.card" = "issued.card")
+
+account_ids_has_card
+
+# create a dataframe where has_card.card == FALSE
+account_ids_no_cards <- data %>%
+  filter(has_card.card == FALSE) %>%
+  select(account_id)
+
+account_ids_no_cards
+```
+
+## 3.1 Rollup-Fenster
+
+Das Rollup Fenster definieren wir indem wir vom Kaufdatum 13 Monate subtrahieren (12 Monate History + 1 Monat Lag)
+```{r}
+# vom Kaufdatum -13 Monate von Kunden die eine Karte besitzen
+account_ids_has_card <- account_ids_has_card %>%
+  mutate(start_date = kaufdatum.card %m-% months(13))
+
+account_ids_has_card
+```
+
+```{r}
+# get from transaction all accounts that got a card and filter also by its range
+trans_has_card_within_range <- inner_join(
+  x = account_ids_has_card,
+  y = trans,
+  by = "account_id"
+) %>% 
+  filter(date >= start_date & date <= kaufdatum.card )
+
+# check transaction within range
+trans_has_card_within_range
 
 ```
 
-## 3.1 Kaufdatum 
 ```{r}
+# create a function where you filter by account 
+trans_has_card_within_range %>% filter(account_id %in% c(1, 2))
+
+# Calculating 30-day rolling mean
+trans_1_and_2 <- trans_1_and_2 %>%
+  arrange(account_id, date) %>%
+  group_by(account_id) %>%
+  mutate(rolling_mean = rollmean(balance, k = 30, fill = NA, align = "center"))
+
+trans_1_and_2
+
+
+# Create a time lineplot, where on the x axis is the date and y axis balance and amount.
+ggplot(trans_1_and_2, aes(x = date)) +
+  geom_line(aes(
+    y = balance,
+    color = as.factor(account_id),
+    alpha = 0.5,
+    linetype = "dashed"
+  )) +
+  geom_line(
+    aes(
+      y = rolling_mean,
+      color = as.factor(account_id)
+    ),
+    linetype = "solid"
+  ) +
+  labs(
+    title = "Balance and 30-Day Rolling Mean Over Time",
+    x = "Date",
+    y = "Balance",
+    color = "Account ID"
+  )
+```
+
+```{r}
+visualize_account_balance <- function(transactions, 
+                                      accounts_to_filter, 
+                                      window_size = 30) {
+  
+  # Filter transactions by account
+  filtered_transactions <- transactions %>%
+    filter(account_id %in% accounts_to_filter)
+  
+  # Check if filtered data frame is empty
+  if (nrow(filtered_transactions) == 0) {
+    warning("The provided account_id(s) do not appear in the transactions dataset.")
+    return(NULL)
+  }
+  
+  # Calculate rolling mean
+  trans_with_rolling_mean <- filtered_transactions %>%
+    arrange(account_id, date) %>%
+    group_by(account_id) %>%
+    mutate(rolling_mean = rollmean(balance, k = window_size, fill = NA, align = "center"))
+  
+  # Plot
+  plot <- ggplot(trans_with_rolling_mean, aes(x = date)) +
+    geom_line(aes(
+      y = balance,
+      color = as.factor(account_id)
+    )) +
+    geom_line(
+      aes(
+        y = rolling_mean,
+        color = as.factor(account_id)
+      ),
+      linetype = "solid"
+    ) +
+    geom_vline(xintercept = as.numeric(unique(filtered_transactions$kaufdatum.card)),
+               linetype = "dotdash", color = "black", ) + 
+    labs(
+      title = paste(window_size, "-Day Rolling Mean Over Time"),
+      x = "Date",
+      y = "Balance",
+      color = "Account ID"
+    )
+  
+  return(plot)
+}
+
+visualize_account_balance(trans_has_card_within_range, 
+                          accounts_to_filter = c(7, 97), 
+                          window_size = 30)
 
 ```
 
-## 3.2 Rollup-Fenster
-```{r}
 
+```{r}
+trans_has_card_within_range
 ```
+
+
 
 # 4. Nicht-Käufer
 Bestimmen der Nicht-Käufer zum Vergleich (inkl. Rollup-Fenster).
@@ -960,7 +1182,7 @@ Bestimmen der Nicht-Käufer zum Vergleich (inkl. Rollup-Fenster).
 ```
 
 # 5. Event Bezogene Kundeninformationen 
- Erzeugen event-bezogener Kundeninformationen für 12 Monate vor 
+Erzeugen event-bezogener Kundeninformationen für 12 Monate vor 
 Kreditkartenkauf (analog für Nicht-Käufer).
 
 ## 5.1 Kundeninformation für 12 Monate von Käufer

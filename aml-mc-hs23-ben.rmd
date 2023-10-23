@@ -987,44 +987,6 @@ trans <- trans %>%
 trans
 ```
 
-
-```{r}
-# filter in trans dataframe for account_id = 1 and 2
-trans_1_and_2 <- trans %>% filter(account_id %in% c(1, 2))
-
-# Calculating 30-day rolling mean
-trans_1_and_2 <- trans_1_and_2 %>%
-  arrange(account_id, date) %>%
-  group_by(account_id) %>%
-  mutate(rolling_mean = rollmean(balance, k = 30, fill = NA, align = "center"))
-
-trans_1_and_2
-
-
-# Create a time lineplot, where on the x axis is the date and y axis balance and amount.
-ggplot(trans_1_and_2, aes(x = date)) +
-  geom_line(aes(
-    y = balance,
-    color = as.factor(account_id),
-    alpha = 0.5,
-    linetype = "dashed"
-  )) +
-  geom_line(
-    aes(
-      y = rolling_mean,
-      color = as.factor(account_id)
-    ),
-    linetype = "solid"
-  ) +
-  labs(
-    title = "Balance and 30-Day Rolling Mean Over Time",
-    x = "Date",
-    y = "Balance",
-    color = "Account ID"
-  )
-```
-
-
 # 3. Identifizierung
 Identifizieren bestehender Kreditkartenkäufer inkl. Bestimmung des
 Kaufdatums und Rollup-Fensters, definiert durch 1 Monat Lag und 12
@@ -1045,6 +1007,7 @@ account_ids_has_card
 
 Das Rollup Fenster definieren wir indem wir vom Kaufdatum 13 Monate subtrahieren (12 Monate History + 1 Monat Lag). Vor dem Kauf einer Kreditkarte kann es gut sein, dass der Kunde sich 1 Monat schon davor entschieden hat eine Karte zu beantragen und diese noch von der Bank verarbeitet werden muss. Aus diesem Grund filtern wir die Transaktionellen Daten zwischen den Bereich start_date (kaufdatum.datum - 13 Monate) und start_lag_date (kaufdatum.card - 1 Monat).
 
+
 ```{r}
 # vom Kaufdatum -13 Monate von Kunden die eine Karte besitzen
 account_ids_has_card <- account_ids_has_card %>%
@@ -1064,16 +1027,29 @@ buyers <- inner_join(
   filter(date >= start_date & date <= start_lag_date) %>%
   select(-c(start_date, start_lag_date))
 
+# extract year and month
+buyers$month <- format(as.Date(buyers$date), "%m")
+
+
+# reorder col
+buyers <- buyers %>%
+  select(account_id, issued.card, date, month, type:k_symbol)
+
 # check transaction within range
 buyers
+
+
 ```
 
 Wir schreiben eine Funktion die uns erlaubt nach beliebige accounts zu filtern die eine Karte besitzen und in unserem Roll-up Fenster sind. Anschliessend fuehren wir eine Visualisierung von balance durch und zeichnen noch zusaetzlich ein rollingwindow von 30 Tagen ein. Wichtig dabei zu beachten ist, dass das lag-Monat nicht mit visualisiert wird! Diese Visualisierung erlaubt es uns, Kunden mit dem Produkt einer Karte besser zu verstehen. 
+
 ```{r}
 visualize_account_balance <- function(transactions,
                                       accounts_to_filter,
-                                      window_size = 30) {
-  # Filter transactions by account
+                                      window_size = 30,
+                                      show_df = FALSE) {
+
+   # Filter transactions by account
   filtered_transactions <- transactions %>%
     filter(account_id %in% accounts_to_filter)
 
@@ -1088,8 +1064,10 @@ visualize_account_balance <- function(transactions,
     arrange(account_id, date) %>%
     group_by(account_id) %>%
     mutate(rolling_mean = rollmean(balance, k = window_size, fill = NA, align = "center"))
-
-  print(trans_with_rolling_mean)
+  
+  if (show_df) { 
+    print(trans_with_rolling_mean)
+  }
 
   # visualisere balanace and rolling mean
   plot <- ggplot(trans_with_rolling_mean, aes(x = date)) +
@@ -1120,7 +1098,8 @@ visualize_account_balance <- function(transactions,
 
 visualize_account_balance(buyers,
   accounts_to_filter = c(7),
-  window_size = 30
+  window_size = 30,
+  show_df = TRUE
 )
 ```
 
@@ -1129,49 +1108,61 @@ visualize_account_balance(buyers,
 Da wir nun uns in einem richtigen Roll-up Fenster befinden fuer die Kunden extrahieren wir nun den Monat und fuegen diese als weitere Spalte hinzu. Weiter fügen wir dann eine Spalte value = 1, damit das pivotieren einfacher funktioniert und wir von dem Monat die Anzahl Transkationen kennen, Parallel dazu aggregieren wir noch die balance und amount und erstellen daraus Features für den spezifischen Account. Dadurch haben wir für eine Zeile einen account_id und können diese nun mit unserem grossen Dataframe aus 2. inner_joinen und erhalten die Attribute von Käufer. Einige Attribute sind fuer den Vergleich irrelevant und werden nicht beruecksichtigt.
 
 ```{r}
-# extract year and month
-buyers$month <- format(as.Date(buyers$date), "%m")
+aggregate_buyers_data <- function(buyers, data) {
+  # aggregate_buyers_data aggregiert die numerischen transkationsdaten indem diese
+  # nach account_id gruppiert werden + pivotieren nach Monate.
+  
+  # buyers: Käufer oder fikitive Käufer!
+  # data: Das Grosse DataFrame mit account als row
+  # return: joined Dataframe, 1 row = 1 account! 
+  
+  # Group by account_id and calculate aggregations
+  buyers_grouped <- buyers %>% 
+    group_by(account_id) %>% 
+    summarise(
+      mean_amount.trans = mean(amount, na.rm = TRUE),
+      max_amount.trans = max(amount, na.rm = TRUE),
+      min_amount.trans = min(amount, na.rm = TRUE),
+      median_amount.trans = median(amount, na.rm = TRUE),
+      mean_balance.trans = mean(balance, na.rm = TRUE),
+      max_balance.trans = max(balance, na.rm = TRUE),
+      min_balance.trans = min(balance, na.rm = TRUE),
+      median_balance.trans = median(balance, na.rm = TRUE),
+      .groups = 'drop'
+    ) 
+  
+  # Pivot wider Dataframe
+  buyers_pivot <- buyers %>% 
+    select(c(account_id, month)) %>% 
+    mutate(value = 1) %>% 
+    group_by(account_id, month) %>% 
+    summarise(count = n(), .groups = "drop") %>% ungroup() %>% 
+    right_join(buyers_grouped, by = "account_id") %>% 
+    pivot_wider(
+      names_from = month,
+      values_from = count,
+      values_fill = list(count = 0)
+    )
+  
+  buyers
+  
+  # inner join with data
+  buyers_data <- inner_join(x = buyers_pivot, y = data, by = "account_id")
+  
+  return(buyers_data)
+}
+```
 
+
+```{r}
+# displaz buyers
 buyers
 
+# call function to aggregate transaktional data from buyers and concat them to big dataset
+buyers_data <- aggregate_buyers_data(buyers, data)
 
-# Group by account_id and calculate aggregations
-buyers_grouped <- buyers %>% 
-  group_by(account_id) %>% 
-  summarise(
-    mean_amount = mean(amount, na.rm = TRUE),
-    max_amount = max(amount, na.rm = TRUE),
-    min_amount = min(amount, na.rm = TRUE),
-    median_amount = median(amount, na.rm = TRUE),
-    mean_balance = mean(balance, na.rm = TRUE),
-    max_balance = max(balance, na.rm = TRUE),
-    min_balance = min(balance, na.rm = TRUE),
-    median_balance = median(balance, na.rm = TRUE),
-    .groups = 'drop'
-  ) 
-
-buyers_grouped
-
-# Pivot wider Dataframe
-buyers_pivot <- buyers %>% 
-  select(c(account_id, month)) %>% 
-  mutate(value = 1) %>% 
-  group_by(account_id, month) %>% 
-  summarise(count = n(), .groups = "drop") %>% ungroup() %>% 
-  right_join(buyers_grouped, by = "account_id") %>% 
-  pivot_wider(
-    names_from = month,
-    values_from = count,
-    values_fill = list(count = 0)
-  )
-
-buyers_pivot
-
-
-# inner join with data
-buyers_data <- inner_join(x = buyers_pivot, y = data, by = "account_id") %>% select(-c(date.loan, account_creation_date.account))
-
-buyers_data
+# display big Dataset from buyers
+buyers_data 
 ```
 ## 3.4 EDA von Karten Kaeufer
 
@@ -1381,27 +1372,38 @@ account_ids_no_cards <- data %>%
 
 account_ids_no_cards
 
+#####
+# zu account_ids_no_cards fiktive issued.card hinzufuegen, indem vergleich zwischen buyer und non_buyer gezogen wird!
+
+#####
+
+
+
 non_buyers <- inner_join(
   x = account_ids_no_cards,
   y = trans,
   by = "account_id"
 )
 
-non_buyers$year_month <- format(as.Date(non_buyers$date), "%Y-%m")
+non_buyers
+
+# extract month
+non_buyers$month <- format(as.Date(non_buyers$date), "%m")
 
 non_buyers_pivot <- non_buyers %>%
-  select(account_id, year_month) %>%
+  select(account_id, month) %>%
   mutate(value = 1) %>%
   pivot_wider(
-    names_from = year_month,
+    names_from = month,
     values_from = value, values_fn = sum
   )
 
+non_buyers_pivot
 
 # inner join with data
-non_cardholder_data <- inner_join(x = non_buyers_pivot, y = data, by = "account_id") %>% select(-c(date.loan, account_creation_date.account))
+non_buyers_data <- inner_join(x = non_buyers_pivot, y = data, by = "account_id")
 
-non_cardholder_data
+non_buyers_data
 ```
 
 Note: putative/potential purchase drivers are selected and organized into a client analytical record
@@ -1410,8 +1412,31 @@ exploratory analysis conditioned on the target attribute can be useful. For pred
 
 
 ## 4.2 Fiktives issued für Nicht-Käufer definieren
-```{r}
 
+Idee: Wir haben einen pool von non_buyers_data und einen pool von buyers_data, welche ein issued.card Datum haben. 
+Nun wollen wir für einen non-buyer einen möglichst ähnlichen buyer finden und nehmen dann diesen issue.card Datum und fügen diese dann dem non-buyer hinzu. 
+Dabei soll berücksichtigt werden, dass: 
+- Zeitspanne (issued.date - 13 Monate -> Transkationen bei non-buyers vorhanden?
+- Alter ? 
+- Geschlecht ? 
+- Region ? 
+- has_loan ?
+- has_order ?
+- issuance_statement_frequency.account)
+
+wie? 
+Iteriere durch non-buyers account, filtere ob bsp. Geschlecht gleich ist, Region gleich ist, has_loan gleich ist, has_order oder issuance_statement. Es bleiben nur noch die buyers übrig die diesen krieterien entsprechen mit dem non-buyer. Anschliessend vergleiche, ob der non-buyer und buyer mindestens 12 Monate überlappngen aufweist, falls ja, berechne nun das Alter, und das Alter mit der tiefsten Differenz, von dem buyer nimm das issued.card Datum und füge das dem account_ids_no_cards zur entsprechenden non-buyer id hinzu. 
+
+```{r}
+# accounts_ids
+account_ids_has_card
+
+account_ids_no_cards
+
+# dataframes
+non_buyers_data
+
+buyers_data
 ```
 
 ## 4.3 Vergleich 

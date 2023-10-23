@@ -599,7 +599,7 @@ Wir innen joinen client und disp mit client_id, renamen die Spaltenamen und füg
 
 ```{r cmobine client-disp}
 # client und disp weisen eine 1:1 relation auf client_id auf.
-print(paste("Anzahl Zeilen client df:", nrow(client)))
+print(paste("Anzahl Zeilen client_ids_older_than_25 df:", nrow(client_ids_older_than_25)))
 print(paste("Anzahl Zeilen disp df:", nrow(disp)))
 
 # Inner join client with client_ids_older_than_25 to remove junior and clients age <= 25
@@ -967,6 +967,12 @@ data <- client_disp_card_account_loan_order_district
 data
 ```
 
+## 2.9 Data
+```{r}
+data
+```
+
+
 ## 2.9 +trans?
 Ein Account kann mehrere Transaktionen gemacht haben. 
 - droppen von unnoetigen Transaktion spalten
@@ -1120,35 +1126,52 @@ visualize_account_balance(buyers,
 
 ## 3.3 Käufer Eigenschaften
 
-Da wir nun uns in einem richtigen Roll-up Fenster befinden fuer die Kunden extrahieren wir nun das Jahr und den Monat und fuegen diese als weitere Spalte hinzu. Weiter fügen wir dann eine Spalte value = 1, damit das pivotieren einfacher funktioniert. Dadurch haben wir für eine Zeile einen account_id und können diese nun mit unserem grossen Dataframe aus 2. inner_joinen und erhalten die Attribute von Käufer. Einige Attribute sind fuer den Vergleich irrelevant und werden nicht beruecksichtigt.
+Da wir nun uns in einem richtigen Roll-up Fenster befinden fuer die Kunden extrahieren wir nun den Monat und fuegen diese als weitere Spalte hinzu. Weiter fügen wir dann eine Spalte value = 1, damit das pivotieren einfacher funktioniert und wir von dem Monat die Anzahl Transkationen kennen, Parallel dazu aggregieren wir noch die balance und amount und erstellen daraus Features für den spezifischen Account. Dadurch haben wir für eine Zeile einen account_id und können diese nun mit unserem grossen Dataframe aus 2. inner_joinen und erhalten die Attribute von Käufer. Einige Attribute sind fuer den Vergleich irrelevant und werden nicht beruecksichtigt.
 
 ```{r}
 # extract year and month
-buyers$year_month <- format(as.Date(buyers$date), "%Y-%m")
+buyers$month <- format(as.Date(buyers$date), "%m")
 
 buyers
 
+
+# Group by account_id and calculate aggregations
+buyers_grouped <- buyers %>% 
+  group_by(account_id) %>% 
+  summarise(
+    mean_amount = mean(amount, na.rm = TRUE),
+    max_amount = max(amount, na.rm = TRUE),
+    min_amount = min(amount, na.rm = TRUE),
+    median_amount = median(amount, na.rm = TRUE),
+    mean_balance = mean(balance, na.rm = TRUE),
+    max_balance = max(balance, na.rm = TRUE),
+    min_balance = min(balance, na.rm = TRUE),
+    median_balance = median(balance, na.rm = TRUE),
+    .groups = 'drop'
+  ) 
+
+buyers_grouped
+
 # Pivot wider Dataframe
-buyers_pivot <- buyers %>%
-  select(account_id, year_month) %>%
-  mutate(value = 1) %>%
+buyers_pivot <- buyers %>% 
+  select(c(account_id, month)) %>% 
+  mutate(value = 1) %>% 
+  group_by(account_id, month) %>% 
+  summarise(count = n(), .groups = "drop") %>% ungroup() %>% 
+  right_join(buyers_grouped, by = "account_id") %>% 
   pivot_wider(
-    names_from = year_month,
-    values_from = value, values_fn = sum
+    names_from = month,
+    values_from = count,
+    values_fill = list(count = 0)
   )
 
 buyers_pivot
 
-# check if a row has more than 12 missing values
-buyers_pivot %>%
-  filter(rowSums(!is.na(.)) < 12) %>% # arrange by number of missing values
-  arrange(desc(rowSums(is.na(.))))
-
 
 # inner join with data
-cardholder_data <- inner_join(x = buyers_pivot, y = data, by = "account_id") %>% select(-c(date.loan, account_creation_date.account))
+buyers_data <- inner_join(x = buyers_pivot, y = data, by = "account_id") %>% select(-c(date.loan, account_creation_date.account))
 
-cardholder_data
+buyers_data
 ```
 ## 3.4 EDA von Karten Kaeufer
 

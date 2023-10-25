@@ -1347,8 +1347,6 @@ trans_aggregated <- inner_join(trans_type, trans_operation, by = c("account_id",
 trans_aggregated <-
   trans_aggregated
 
-write_xlsx(head(trans_aggregated, 1000), path = "data_export\\xselling_banking_data.xlsx")
-
 trans_aggregated_wider <- trans_aggregated %>%
   pivot_wider(
     names_from = year_month,
@@ -1426,6 +1424,18 @@ Dabei soll berücksichtigt werden, dass:
 
 wie? 
 Iteriere durch non-buyers account, filtere ob bsp. Geschlecht gleich ist, Region gleich ist, has_loan gleich ist, has_order oder issuance_statement. Es bleiben nur noch die buyers übrig die diesen krieterien entsprechen mit dem non-buyer. Anschliessend vergleiche, ob der non-buyer und buyer mindestens 12 Monate überlappngen aufweist, falls ja, berechne nun das Alter, und das Alter mit der tiefsten Differenz, von dem buyer nimm das issued.card Datum und füge das dem account_ids_no_cards zur entsprechenden non-buyer id hinzu. 
+
+Feedback von Dani:
+Idee nicht gut, da wir dann das Modell die Möglichkeit vorweg schon weg nehmen aufgrund von den Attributen zu lernen.  
+
+Neue idee: 
+Von Buyers Transaktionsdataframe in dem Rollup Fenster erstellen. (issued.card - 13 Monate bis start_lag_date)
+buyers Transaktionsdataframe, vom Datum -> Jahr und Monat extrahiere und dann pivotiere. 
+Anschliessend mit 1 oder 0 auffuellen. 
+
+Analog mache ich das gleiche fuer non buyers, filtere aber jedoch nicht das Fenster. 
+Anschliessend picke ich random einen buyer aus und nehme den grössten jaccard wert mit non buyer in bezug auf die transkationsdaten jahr monat.
+
 
 ```{r}
 # accounts_ids

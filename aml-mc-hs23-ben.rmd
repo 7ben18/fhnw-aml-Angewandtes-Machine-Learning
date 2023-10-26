@@ -994,6 +994,8 @@ Monate History vor Kreditkartenkauf.
 
 ## 3.1 Identifizierung bestehender Kreditkartenkaeufer und Kaufdatum
 
+selektieren vom grossen dataframe has_card nach True und selektieren account_id und issued.card
+
 ```{r}
 # create a dataframe where has_card.card == TRUE
 account_ids_has_card <- data %>%
@@ -1005,7 +1007,7 @@ account_ids_has_card
 
 ## 3.2 Rollup-Fenster von Käufer
 
-Das Rollup Fenster definieren wir indem wir vom Kaufdatum 13 Monate subtrahieren (12 Monate History + 1 Monat Lag). Vor dem Kauf einer Kreditkarte kann es gut sein, dass der Kunde sich 1 Monat schon davor entschieden hat eine Karte zu beantragen und diese noch von der Bank verarbeitet werden muss. Aus diesem Grund filtern wir die Transaktionellen Daten zwischen den Bereich start_date (kaufdatum.datum - 13 Monate) und start_lag_date (kaufdatum.card - 1 Monat).
+Das Rollup Fenster definieren wir indem wir vom Kaufdatum 13 Monate subtrahieren (12 Monate History + 1 Monat Lag). Vor dem Kauf einer Kreditkarte kann es gut sein, dass der Kunde sich 1 Monat schon davor entschieden hat eine Karte zu beantragen und diese noch von der Bank verarbeitet werden muss. Aus diesem Grund filtern wir die Transaktionellen Daten zwischen den Bereich start_date (kaufdatum.datum - 13 Monate) und start_lag_date (kaufdatum.card - 1 Monat). Somit erhalten wir unsere Transkationsdaten fuer Kunden die eine Karte haben im gegebenen Zeitfenster.
 
 
 ```{r}
@@ -1028,19 +1030,47 @@ buyers <- inner_join(
   select(-c(start_date, start_lag_date))
 
 # extract year and month
-buyers$month <- format(as.Date(buyers$date), "%m")
+buyers$year_month <- format(as.Date(buyers$date), "%Y-%m")
 
 
 # reorder col
 buyers <- buyers %>%
-  select(account_id, issued.card, date, month, type:k_symbol)
+  select(account_id, issued.card, date, year_month, type:k_symbol)
 
 # check transaction within range
 buyers
-
-
 ```
 
+## 3.3 Roll-up Fenster Pivotieren
+Ein Kunde der eine Karte hat, kann schon mehrere Transaktionen in einem Monat haben. Damit wir diese spaeter mit den non-buyers vergleichen koennen, extrahieren wir das Jahr und den Monat, gruppieren und pivotieren das Dataframe. So erhaltlen wir auf einer Zeile einen Kunden und deren zugehorigen Jahr-Monat als Spalte. Die Werte werden bewusst auf 1 oder 0 gesetzt, wobei 1 dafuer steht, dass eine Transaktion gemacht wurde in diesem Jahr-Monat und 0 fuer keine. 
+
+```{r}
+# select from buyers only account_id and year_month, group by and count number of rows, if there is a transaction in this year-month set value to 1 else 0
+buyers_pivot <- buyers %>%
+  select(account_id, year_month) %>%
+  group_by(account_id, year_month) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  mutate(value = 1) %>%
+  pivot_wider(
+    id_cols = account_id,
+    names_from = year_month,
+    values_from = value,
+    values_fill = 0
+  ) %>%
+  select(account_id, sort(buyers$year_month))
+
+
+buyers_pivot
+
+# calculate the rowsum of each row and add them as a new column, sort ascending
+buyers_pivot %>%
+  mutate(rowsum = rowSums(across(-account_id))) %>%
+  arrange(rowsum)
+
+# ueberlegung, ob kauefer die ein weniger als 12 rowsums haben gedroppt werden. (ca. 150 Kauefer)
+```
+
+## 3.4 Roll-up visualization
 Wir schreiben eine Funktion die uns erlaubt nach beliebige accounts zu filtern die eine Karte besitzen und in unserem Roll-up Fenster sind. Anschliessend fuehren wir eine Visualisierung von balance durch und zeichnen noch zusaetzlich ein rollingwindow von 30 Tagen ein. Wichtig dabei zu beachten ist, dass das lag-Monat nicht mit visualisiert wird! Diese Visualisierung erlaubt es uns, Kunden mit dem Produkt einer Karte besser zu verstehen. 
 
 ```{r}
@@ -1048,8 +1078,7 @@ visualize_account_balance <- function(transactions,
                                       accounts_to_filter,
                                       window_size = 30,
                                       show_df = FALSE) {
-
-   # Filter transactions by account
+  # Filter transactions by account
   filtered_transactions <- transactions %>%
     filter(account_id %in% accounts_to_filter)
 
@@ -1064,8 +1093,8 @@ visualize_account_balance <- function(transactions,
     arrange(account_id, date) %>%
     group_by(account_id) %>%
     mutate(rolling_mean = rollmean(balance, k = window_size, fill = NA, align = "center"))
-  
-  if (show_df) { 
+
+  if (show_df) {
     print(trans_with_rolling_mean)
   }
 
@@ -1097,73 +1126,13 @@ visualize_account_balance <- function(transactions,
 }
 
 visualize_account_balance(buyers,
-  accounts_to_filter = c(7),
+  accounts_to_filter = c(7, 14),
   window_size = 30,
   show_df = TRUE
 )
 ```
 
-## 3.3 Käufer Eigenschaften
 
-Da wir nun uns in einem richtigen Roll-up Fenster befinden fuer die Kunden extrahieren wir nun den Monat und fuegen diese als weitere Spalte hinzu. Weiter fügen wir dann eine Spalte value = 1, damit das pivotieren einfacher funktioniert und wir von dem Monat die Anzahl Transkationen kennen, Parallel dazu aggregieren wir noch die balance und amount und erstellen daraus Features für den spezifischen Account. Dadurch haben wir für eine Zeile einen account_id und können diese nun mit unserem grossen Dataframe aus 2. inner_joinen und erhalten die Attribute von Käufer. Einige Attribute sind fuer den Vergleich irrelevant und werden nicht beruecksichtigt.
-
-```{r}
-aggregate_buyers_data <- function(buyers, data) {
-  # aggregate_buyers_data aggregiert die numerischen transkationsdaten indem diese
-  # nach account_id gruppiert werden + pivotieren nach Monate.
-  
-  # buyers: Käufer oder fikitive Käufer!
-  # data: Das Grosse DataFrame mit account als row
-  # return: joined Dataframe, 1 row = 1 account! 
-  
-  # Group by account_id and calculate aggregations
-  buyers_grouped <- buyers %>% 
-    group_by(account_id) %>% 
-    summarise(
-      mean_amount.trans = mean(amount, na.rm = TRUE),
-      max_amount.trans = max(amount, na.rm = TRUE),
-      min_amount.trans = min(amount, na.rm = TRUE),
-      median_amount.trans = median(amount, na.rm = TRUE),
-      mean_balance.trans = mean(balance, na.rm = TRUE),
-      max_balance.trans = max(balance, na.rm = TRUE),
-      min_balance.trans = min(balance, na.rm = TRUE),
-      median_balance.trans = median(balance, na.rm = TRUE),
-      .groups = 'drop'
-    ) 
-  
-  # Pivot wider Dataframe
-  buyers_pivot <- buyers %>% 
-    select(c(account_id, month)) %>% 
-    mutate(value = 1) %>% 
-    group_by(account_id, month) %>% 
-    summarise(count = n(), .groups = "drop") %>% ungroup() %>% 
-    right_join(buyers_grouped, by = "account_id") %>% 
-    pivot_wider(
-      names_from = month,
-      values_from = count,
-      values_fill = list(count = 0)
-    )
-  
-  buyers
-  
-  # inner join with data
-  buyers_data <- inner_join(x = buyers_pivot, y = data, by = "account_id")
-  
-  return(buyers_data)
-}
-```
-
-
-```{r}
-# displaz buyers
-buyers
-
-# call function to aggregate transaktional data from buyers and concat them to big dataset
-buyers_data <- aggregate_buyers_data(buyers, data)
-
-# display big Dataset from buyers
-buyers_data 
-```
 ## 3.4 EDA von Karten Kaeufer
 
 Wir schauen uns an, was ueberhaupt ein Kartenkaeufer ausmacht und explorieren den komibinerten Datensatz
@@ -1266,7 +1235,7 @@ data %>%
 ```
 
 
-## 3.4 Testing
+## 3.5 Testing
 
 Wir versuchen aus den Transaktionsdaten von den buyer die Attribute in einem geeignetem Format zu kriegen. Dabei unterscheiden wir die Kategorische und Numerische Spalten. Grundsaetzlich gruppieren wir nach account_id und year_month und zaehlen bei den kategorischen variabeln wie oft diese variable vorkommt. Bei den numerischen Werten berechnen wir Attribute wie Summe, Mittelwert, Median etc.... anschliessend joinen wir alles zu einem Dataframe und pivotieren diese. Beim pivotieren erhalten wir zu viele Spalten (mehr als 1000). (Behalten den Code, vlt brauchen wir den spaeter)
 ```{r}
@@ -1362,55 +1331,22 @@ Bestimmen der Nicht-Käufer zum Vergleich (inkl. Rollup-Fenster).
 ## 4.1 Bestimmung von Nicht-Käufer
 
 Wir haben 3094 potentielle Kunden denen wir eine Karte anbieten könnten.
+
+
+(Kontaktstunde vom 24.10.2023)
+Weiter schauen wir uns an, wann der account erstellt wurde und berechnen 12 Monate in die "zukunft", damit wir Neukunden nicht als potentielle Kunden betrachten, da deren Verhalten am Anfang ein anderer ist, als bei einem langjaehrigen Kunden. 
 ```{r}
 # create a dataframe where has_card.card == FALSE
 account_ids_no_cards <- data %>%
   filter(has_card.card == FALSE) %>%
-  select(account_id)
+  select(account_id, account_creation_date.account)
 
 account_ids_no_cards
-
-#####
-# zu account_ids_no_cards fiktive issued.card hinzufuegen, indem vergleich zwischen buyer und non_buyer gezogen wird!
-
-#####
-
-
-
-non_buyers <- inner_join(
-  x = account_ids_no_cards,
-  y = trans,
-  by = "account_id"
-)
-
-non_buyers
-
-# extract month
-non_buyers$month <- format(as.Date(non_buyers$date), "%m")
-
-non_buyers_pivot <- non_buyers %>%
-  select(account_id, month) %>%
-  mutate(value = 1) %>%
-  pivot_wider(
-    names_from = month,
-    values_from = value, values_fn = sum
-  )
-
-non_buyers_pivot
-
-# inner join with data
-non_buyers_data <- inner_join(x = non_buyers_pivot, y = data, by = "account_id")
-
-non_buyers_data
 ```
-
-Note: putative/potential purchase drivers are selected and organized into a client analytical record
-(“golden record”). To understand and communicate the impact of individual attributes univariate
-exploratory analysis conditioned on the target attribute can be useful. For predictive models
-
 
 ## 4.2 Fiktives issued für Nicht-Käufer definieren
 
+Erste Idee:
 Idee: Wir haben einen pool von non_buyers_data und einen pool von buyers_data, welche ein issued.card Datum haben. 
 Nun wollen wir für einen non-buyer einen möglichst ähnlichen buyer finden und nehmen dann diesen issue.card Datum und fügen diese dann dem non-buyer hinzu. 
 Dabei soll berücksichtigt werden, dass: 
@@ -1425,29 +1361,304 @@ Dabei soll berücksichtigt werden, dass:
 wie? 
 Iteriere durch non-buyers account, filtere ob bsp. Geschlecht gleich ist, Region gleich ist, has_loan gleich ist, has_order oder issuance_statement. Es bleiben nur noch die buyers übrig die diesen krieterien entsprechen mit dem non-buyer. Anschliessend vergleiche, ob der non-buyer und buyer mindestens 12 Monate überlappngen aufweist, falls ja, berechne nun das Alter, und das Alter mit der tiefsten Differenz, von dem buyer nimm das issued.card Datum und füge das dem account_ids_no_cards zur entsprechenden non-buyer id hinzu. 
 
-Feedback von Dani:
+Feedback von Dani (Kontaktstunde 24.10.2023):
 Idee nicht gut, da wir dann das Modell die Möglichkeit vorweg schon weg nehmen aufgrund von den Attributen zu lernen.  
 
 Neue idee: 
 Von Buyers Transaktionsdataframe in dem Rollup Fenster erstellen. (issued.card - 13 Monate bis start_lag_date)
 buyers Transaktionsdataframe, vom Datum -> Jahr und Monat extrahiere und dann pivotiere. 
-Anschliessend mit 1 oder 0 auffuellen. 
+Anschliessend mit 1 oder 0 auffuellen. (Siehe 3.3)
 
 Analog mache ich das gleiche fuer non buyers, filtere aber jedoch nicht das Fenster. 
 Anschliessend picke ich random einen buyer aus und nehme den grössten jaccard wert mit non buyer in bezug auf die transkationsdaten jahr monat.
 
+```{r}
+# get transaktion dataframe from non-buyers
+non_buyers <- inner_join(
+  x = account_ids_no_cards,
+  y = trans,
+  by = "account_id"
+)
+
+# extract month
+non_buyers$year_month <- format(as.Date(non_buyers$date), "%Y-%m")
+
+non_buyers
+```
+
+### 4.2.1 Fenster von Nicht Kauefer bearbeiten
+
+
+(Kontaktstunde vom 24.10.2023)
+Wir filtern die Transaktionsdaten, damit wir die Transkationsdaten von Neukunden (Kunden die im ersten Jahr bei der Bank sind), nicht haben. 
 
 ```{r}
-# accounts_ids
+# create a column where you add one year to creation date
+non_buyers <- non_buyers %>%
+  mutate(
+    end_date = account_creation_date.account %m+% months(12),
+  )
+
+# Exclude date range between account_creation_date.account and end_date from non_buyers
+non_buyers <- non_buyers %>%
+  filter(date < account_creation_date.account | date > end_date)
+
+# reorder dataframe non_buyers
+non_buyers <- non_buyers %>%
+  select(account_id, date, year_month, type:k_symbol)
+
+non_buyers
+```
+
+### 4.2.2 Non-buyer pivotieren
+Wir pivotieren die non-buyers, analog wie bei den buyers. Jede Spalte repraesntiert das Jahr und den Monat, die Werte 1 oder 0 sagen aus, ob eine Transaktion durchgefuehrt wurde oder nicht. Da wir beim pivotieren nicht die gleiche Anzahl an spalten erhalten, wurde noch von den Transaktions Dataset das minimale und maximale Datum herausgefiltert und eine Liste gebastelt mit einem Abstand von jeweils einen Monat. Anschliessend ueberpruefen wir, ob das Jahr-Monat vorkam, falls nicht wird eine Spalte erstellt und diese mit 0 aufgefuellt. wir sortieren beide Dataframes und erhalten somit die gleiche Anzahl spalten fuer die buyers (im Roll-up Fenster) und non-buyers. 
+
+```{r}
+# pivot non-buyers
+non_buyers_pivot <- non_buyers %>%
+  select(account_id, year_month) %>%
+  group_by(account_id, year_month) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  mutate(value = 1) %>%
+  pivot_wider(
+    id_cols = account_id,
+    names_from = year_month,
+    values_from = value,
+    values_fill = 0
+  ) %>%
+  select(account_id, sort(non_buyers$year_month))
+
+# extract from trans date the min and max date but just year-month
+min_date <- min(format(as.Date(trans$date), "%Y-%m"))
+max_date <- max(format(as.Date(trans$date), "%Y-%m"))
+
+# append "-01" to min_date and max_date
+min_date <- paste(min_date, "-01", sep = "")
+max_date <- paste(max_date, "-01", sep = "")
+
+# create an array between min_date and max_date 1 months apart
+date_range <- seq.Date(from = as.Date(min_date), to = as.Date(max_date), by = "month")
+
+year_month_range <- format(date_range, "%Y-%m")
+
+# if there is a column that does not exist in non_buyers_pivot and buyer but in year_month_range, add it and set value to 0
+for (col in year_month_range) {
+  if (!(col %in% colnames(non_buyers_pivot))) {
+    non_buyers_pivot[[col]] <- 0
+  }
+}
+
+# same for buyers_pivot
+for (col in year_month_range) {
+  if (!(col %in% colnames(buyers_pivot))) {
+    buyers_pivot[[col]] <- 0
+  }
+}
+
+# sort both dataframe by year_month range
+non_buyers_pivot <- non_buyers_pivot %>%
+  select(account_id, sort(year_month_range))
+
+buyers_pivot <- buyers_pivot %>%
+  select(account_id, sort(year_month_range))
+
+buyers_pivot
+non_buyers_pivot
+```
+
+
+## 4.3 Bestimmung von fiktives issued_date
+Mit den beiden Dataframes aus 4.2.2 koennen wir nun den Jaccard-index berechnen. Sprich die groesste Zeitfensterueberlappungen von Roll-up Fenster Buyer und non-buyers. Da es sein kann, dass mehrere ueberlappungen von non-buyers und buyers gleich sind, picken wir random ein issued date in diesem fall vom buyer aus und fuegen dem den non-buyer hinzu. 
+Wir erreichen diese mittels Iterationen durch jeden non_buyer_pivot. 
+```{r}
+# WICHTIG: Sortieren nach account_id aufsteigend!
+
+# sort all dataframes by account_id ascending with a function
+sort_by_account_id <- function(df) {
+  df <- df %>%
+    arrange(account_id)
+}
+
+# apply function to all 4 dataframes in this codeblock
+non_buyers_pivot <- sort_by_account_id(non_buyers_pivot)
+buyers_pivot <- sort_by_account_id(buyers_pivot)
+account_ids_has_card <- sort_by_account_id(account_ids_has_card)
+account_ids_no_cards <- sort_by_account_id(account_ids_no_cards)
+
+account_ids_has_card
+account_ids_no_cards
+buyers_pivot
+non_buyers_pivot
+```
+
+### 4.3.1 Umwandeln in Matrizen
+Wir wandeln die buyers_pivot un non_buyers_pivot in matrizen um, und droppen dabei account_id, da diese bei der Berechnung von Jaccard nicht dabei sein sollte. Aus diesem Grund war das sortieren vorhin sehr wichtig, damit spaeter eine Zuweisung wieder auf deren Indexe gemacht werden kann. 
+```{r}
+# drop in buyers_pivot and non_buyers_pivot
+buyers_pivot_matrix <- buyers_pivot %>%
+  select(-c(account_id)) %>%
+  as.matrix()
+
+buyers_pivot_matrix
+
+# select one row from buyers_pivot_matrix
+# buyers_pivot_matrix[1, 1:ncol(buyers_pivot_matrix)]
+
+
+non_buyers_pivot_matrix <- non_buyers_pivot %>%
+  select(-c(account_id)) %>%
+  as.matrix()
+
+non_buyers_pivot_matrix
+```
+
+### 4.3.2 Jaccard Index Testing
+Hier testen wir den Jaccard Index und schreiben eine Funktion dafuer.
+```{r}
+# Define two binary matrices
+matrix1 <- matrix(c(
+  1, 0, 0, 1,
+  0, 1, 1, 0,
+  1, 1, 0, 1
+), nrow = 3, byrow = TRUE)
+
+matrix2 <- matrix(c(
+  0, 1, 0, 1,
+  1, 0, 1, 0,
+  1, 1, 1, 0
+), nrow = 3, byrow = TRUE)
+
+# Define function to calculate Jaccard Index for two rows
+jaccard_index <- function(row1, row2) {
+  intersection <- sum(row1 * row2)
+  union <- sum(row1 + row2 > 0)
+  return(intersection / union)
+}
+
+# Calculate row-wise Jaccard Index for each combination of rows
+nrows1 <- nrow(matrix1)
+nrows2 <- nrow(matrix2)
+jaccard_matrix <- matrix(0, nrow = nrows1, ncol = nrows2)
+for (i in 1:nrows1) {
+  for (j in 1:nrows2) {
+    jaccard_matrix[i, j] <- jaccard_index(matrix1[i, ], matrix2[j, ])
+  }
+}
+
+# Print the result
+print(jaccard_matrix)
+```
+
+### 4.3.3 Anwendung Jaccard index
+Wir wenden die Funktion an unserem echten Datensatz und erhalten eine 691x3086 Jaccard Matrix. 691 Zeilen von den buyers und 3086 von den Non Buyers. 
+```{r}
+# Calculate row-wise Jaccard index for each combination of rows with buyers_pivot_matrix and non_buyers_pivot_matrix
+nrows1 <- nrow(buyers_pivot_matrix)
+nrows2 <- nrow(non_buyers_pivot_matrix)
+jaccard_matrix <- matrix(0, nrow = nrows1, ncol = nrows2)
+for (i in 1:nrows1) {
+  for (j in 1:nrows2) {
+    jaccard_matrix[i, j] <- jaccard_index(buyers_pivot_matrix[i, ], non_buyers_pivot_matrix[j, ])
+  }
+}
+
+# print nrow and ncol of jaccard_matrix
+print(nrow(jaccard_matrix))
+print(ncol(jaccard_matrix))
+```
+
+### 4.3.4 Indexe
+Da wir 3086 Spalten haben, muessten wir diese nun in Spalten betrachten, um den hoechsten Jaccard Wert und der zugehoerigen Index aus der Zeile herauszufinden. Wir koennen somit fuer jeden non-buyer den hochsten Wert und dem entsprechenden buyer herausholen, indem wir den index der zeile nehmen und diesen den issued.date nachschauen und dies dann im index von der Spalte im non-buyer account hinzufuegen.
+```{r}
+# for each column, get the highstes value and its corresponding row index and column index in a dataframe.
+jaccard_df <- data.frame()
+for (i in 1:ncol(jaccard_matrix)) {
+  col_values <- jaccard_matrix[, i]
+  # höchster Spaltenwert
+  max_value <- max(col_values)
+  # alle row indexe
+  max_indices <- which(col_values == max_value)
+  # eines davon auswaehlen random
+  selected_index <- sample(max_indices, 1)
+
+  # hinzufuegen zum dataframe
+  jaccard_df <- rbind(jaccard_df, data.frame(
+    row_index = selected_index,
+    col_index = i,
+    jaccard_value = max_value
+  ))
+}
+
+# rename row_index to buyers_card_index and col_index to non_buyers_card index
+jaccard_df <- jaccard_df %>%
+  rename(
+    buyers_card_index = row_index,
+    non_buyers_card_index = col_index
+  )
+
+jaccard_df
+
+# Create row index in account_ids_has_card and account_ids_no_cards
+account_ids_has_card <- account_ids_has_card %>%
+  mutate(
+    row_index = row_number()
+  ) %>% select(buyers_card_index = row_index, account_id:start_lag_date)
+
 account_ids_has_card
 
+account_ids_no_cards <- account_ids_no_cards %>%
+  mutate(
+    row_index = row_number()
+  ) %>% select(non_buyers_card_index = row_index, account_id:account_creation_date.account)
+
 account_ids_no_cards
-
-# dataframes
-non_buyers_data
-
-buyers_data
 ```
+
+### 4.3.5 Fiktives Issued Date
+Hier fuegen wir das fiktive issued date zu unserem account_ids_no_cards dataframe hinzu indem wir auf deren indexe zugreifen.
+```{r}
+# inner join jaccard_df with account_ids_no_cards by non_buyers_card_index
+non_buyer_with_buyers_card_index <- inner_join(
+  x = account_ids_no_cards,
+  y = jaccard_df,
+  by = "non_buyers_card_index"
+) %>% select(-c(non_buyers_card_index, account_creation_date.account)) %>% 
+  rename("non_buyer_account_id" = "account_id")
+
+non_buyer_with_buyers_card_index
+
+# left join account_ids_no_cards with account_ids_has_card by buyers_card_index
+non_buyers_fictive_date <- left_join(
+  x = non_buyer_with_buyers_card_index,
+  y = account_ids_has_card,
+  by = "buyers_card_index"
+) %>% select(-c(start_date, start_lag_date, buyers_card_index)) %>% rename(
+  "buyer_account_id" = "account_id",
+  "fictive_issued.card" = "issued.card"
+) %>% select(non_buyer_account_id, fictive_issued.card, jaccard_value, buyer_account_id)
+
+non_buyers_fictive_date %>% arrange(desc(jaccard_value))
+
+
+```
+### 4.3.6 Visualisierungstest
+Visualisierungstest von non_buyer_account_id = 91 und buyer_account_id 3725, mittels Funktion aus 3.4
+
+Die Funnktion visualisiert, dass die Ueberlappung von non-buyer und buyer funktioniert hat und der Code von 4.3 funktioniert! 
+```{r}
+visualize_account_balance(trans,
+  accounts_to_filter = c(91, 3725),
+  window_size = 30,
+  show_df = FALSE
+)
+
+visualize_account_balance(trans,
+  accounts_to_filter = c(1390, 2409),
+  window_size = 30,
+  show_df = FALSE
+)
+```
+
 
 ## 4.3 Vergleich 
 ```{r}

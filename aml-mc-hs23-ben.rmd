@@ -1752,6 +1752,11 @@ non_buyers
 
 ```
 
+```{r}
+
+```
+
+
 ## 6.2 Kundeninformation für 12 Monate von Käufer
 ```{r}
 

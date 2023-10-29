@@ -973,7 +973,7 @@ data
 ```
 
 
-## 2.9 +trans?
+## 2.10 trans
 Ein Account kann mehrere Transaktionen gemacht haben. 
 - droppen von unnoetigen Transaktion spalten
 - Aggregation fuer Numerische (Mean, Median etc...)
@@ -982,15 +982,13 @@ Ein Account kann mehrere Transaktionen gemacht haben.
 
 ```{r +trans?}
 trans <- trans %>%
-  select(-c(trans_id, account, bank)) %>%
+  select(-c(trans_id, account)) %>%
   arrange(account_id)
 trans
 ```
 
 # 3. Identifizierung
-Identifizieren bestehender Kreditkartenkäufer inkl. Bestimmung des
-Kaufdatums und Rollup-Fensters, definiert durch 1 Monat Lag und 12
-Monate History vor Kreditkartenkauf.
+Identifizieren bestehender Kreditkartenkäufer inkl. Bestimmung des Kaufdatums und Rollup-Fensters, definiert durch 1 Monat Lag und 12 Monate History vor Kreditkartenkauf.
 
 ## 3.1 Identifizierung bestehender Kreditkartenkaeufer und Kaufdatum
 
@@ -1032,10 +1030,11 @@ buyers <- inner_join(
 # extract year and month
 buyers$year_month <- format(as.Date(buyers$date), "%Y-%m")
 
+buyers
 
 # reorder col
 buyers <- buyers %>%
-  select(account_id, issued.card, date, year_month, type:k_symbol)
+  select(account_id, issued.card, date, year_month, type:bank)
 
 # check transaction within range
 buyers
@@ -1330,11 +1329,10 @@ Bestimmen der Nicht-Käufer zum Vergleich (inkl. Rollup-Fenster).
 
 ## 4.1 Bestimmung von Nicht-Käufer
 
-Wir haben 3094 potentielle Kunden denen wir eine Karte anbieten könnten.
-
+Wir haben 3094 potenzielle Kunden denen wir eine Karte anbieten könnten.
 
 (Kontaktstunde vom 24.10.2023)
-Weiter schauen wir uns an, wann der account erstellt wurde und berechnen 12 Monate in die "zukunft", damit wir Neukunden nicht als potentielle Kunden betrachten, da deren Verhalten am Anfang ein anderer ist, als bei einem langjaehrigen Kunden. 
+Weiter schauen wir uns an, wann der account erstellt wurde und berechnen 12 Monate in die "zukunft", damit wir Neukunden nicht als potenzielle Kunden betrachten, da deren Verhalten am Anfang ein anderer ist, als bei einem langjaehrigen Kunden. 
 ```{r}
 # create a dataframe where has_card.card == FALSE
 account_ids_no_cards <- data %>%
@@ -1370,7 +1368,7 @@ buyers Transaktionsdataframe, vom Datum -> Jahr und Monat extrahiere und dann pi
 Anschliessend mit 1 oder 0 auffuellen. (Siehe 3.3)
 
 Analog mache ich das gleiche fuer non buyers, filtere aber jedoch nicht das Fenster. 
-Anschliessend picke ich random einen buyer aus und nehme den grössten jaccard wert mit non buyer in bezug auf die transkationsdaten jahr monat.
+Anschliessend picke ich random einen buyer aus und nehme den grössten jaccard wert mit non buyer in bezug auf die transkationsdaten jahr monat. Falls ein Non-Buyer mehrere aehnliche Buyers zugewiesen werden kann, so wird random ein Buyer gepickt und deren issued.date dem Non-Buyer uebertragen.
 
 ```{r}
 # get transaktion dataframe from non-buyers
@@ -1388,7 +1386,6 @@ non_buyers
 
 ### 4.2.1 Fenster von Nicht Kauefer bearbeiten
 
-
 (Kontaktstunde vom 24.10.2023)
 Wir filtern die Transaktionsdaten, damit wir die Transkationsdaten von Neukunden (Kunden die im ersten Jahr bei der Bank sind), nicht haben. 
 
@@ -1405,7 +1402,7 @@ non_buyers <- non_buyers %>%
 
 # reorder dataframe non_buyers
 non_buyers <- non_buyers %>%
-  select(account_id, date, year_month, type:k_symbol)
+  select(account_id, date, year_month, type:bank)
 
 non_buyers
 ```
@@ -1469,7 +1466,7 @@ non_buyers_pivot
 
 ## 4.3 Bestimmung von fiktives issued_date
 Mit den beiden Dataframes aus 4.2.2 koennen wir nun den Jaccard-index berechnen. Sprich die groesste Zeitfensterueberlappungen von Roll-up Fenster Buyer und non-buyers. Da es sein kann, dass mehrere ueberlappungen von non-buyers und buyers gleich sind, picken wir random ein issued date in diesem fall vom buyer aus und fuegen dem den non-buyer hinzu. 
-Wir erreichen diese mittels Iterationen durch jeden non_buyer_pivot. 
+
 ```{r}
 # WICHTIG: Sortieren nach account_id aufsteigend!
 
@@ -1639,9 +1636,12 @@ non_buyers_fictive_date <- left_join(
 
 non_buyers_fictive_date %>% arrange(desc(jaccard_value))
 
+non_buyers_fictive_date %>% arrange(non_buyer_account_id)
 
 ```
-### 4.3.6 Visualisierungstest
+
+
+## 4.4 Vergleich 
 Visualisierungstest von non_buyer_account_id = 91 und buyer_account_id 3725, mittels Funktion aus 3.4
 
 Die Funnktion visualisiert, dass die Ueberlappung von non-buyer und buyer funktioniert hat und der Code von 4.3 funktioniert! 
@@ -1659,163 +1659,238 @@ visualize_account_balance(trans,
 )
 ```
 
+## 4.5 Rollup-Fenster Vergleich
+Wir selektieren von den Non-Buyers die account_id und das fiktive Datum, erstellen die Roll-up Fenster analog zu den Buyer und filtern die trans Dataset in den entsprechenden Roll-up Fenster und vergleichen diese dann mit der visualisierungs Funktion fuer die gleichen Accounts wie bei 4.3.4
 
-## 4.3 Vergleich 
 ```{r}
-
-```
-
-## 4.4 Rollup-Fenster Vergleich
-```{r}
-visualize_account_balance(non_buyers,
-  accounts_to_filter = c(1),
-  window_size = 30
+# als Vergleich account_ids_has_card
+account_ids_has_card <- account_ids_has_card %>% select(account_id:start_lag_date
 )
+account_ids_has_card
+
+# Create analoges Dataframe
+account_ids_without_card <- non_buyers_fictive_date %>% select(account_id = non_buyer_account_id, fictive_issued.card) %>% mutate(
+  start_date = fictive_issued.card %m-% months(13),
+  start_lag_date = fictive_issued.card %m-% months(1))
+
+
+account_ids_without_card
+
+non_buyers <- inner_join(
+  x = account_ids_without_card,
+  y = trans,
+  by = "account_id"
+) %>% filter(
+  date >= start_date & date <= start_lag_date) %>% 
+  select(-c(start_date, start_lag_date)) %>% 
+  mutate(year_month = format(as.Date(date), "%Y-%m")) %>% select(account_id, issued.card = fictive_issued.card, date, year_month, type:bank)
+
+
+# print transaction table from buyers and non-buyers
+buyers
+non_buyers
+
+# create transaction_roll_up window for buyers and non-buyers by concat buyers and non_buyers dataframe
+trans_within_range <- rbind(buyers, non_buyers)
+trans_within_range
+
+visualize_account_balance(trans_within_range,
+  accounts_to_filter = c(91, 3725),
+  window_size = 30,
+  show_df = FALSE
+)
+
+visualize_account_balance(trans_within_range,
+  accounts_to_filter = c(1390, 2409),
+  window_size = 30,
+  show_df = FALSE
+)
+
 ```
 
-# 5. Event Bezogene Kundeninformationen 
+# 5 Recap
+Da wir bis zu diesem Schritt vieles gemacht haben, gibt es hier ein kurzes Re-Cap, um die Übersicht wieder zu gewinnen, falls man diese bis dahin verloren hat. 
+
+In den Abschnitten 1 bis und mit 1.2.8 haben wir die Daten eingelesen und versucht einen Zusammenhang der Tabellen zu verstehen, gegebenenfalls auch Data Wrangling betrieben. 
+
+Im Abschnitt 1.3 - 1.3.2 wurden gegebenenfalls die Na Werte imputiert und eine Explorative Datenanalyse durchgeführt.
+
+Im Abschnitt 1.4 haben wir Junioren Karten entfernt und auch eine Altersgrenze definiert, in denen sich darüber unsere Potenzielle Kunden befinden.
+
+Im Abschnitt 2 bis und mit 2.9 haben wir die Tabellen miteinenader verknüpft und ein grosses Dataframe erhalten, welches `data` heisst. 
+
+Im Abschnitt 2.10 - 3.5 Haben wir bei den Transaktionellen Dataframe die wichtigsten Features extrahiert, von den Kunden die eine Karte besitzt ein Roll-up Fenster inklusivem Lag Fenster bestummen und die Transkationsdaten entsprechend in dem Zeitbereich gefiltert und Funktionen zur Visualisierung der Balance geschrieben. 
+
+Im Abschnitt 4 bis und mit 4.3.5 haben wir ein fiktives issued.date für unsere potenziellen Kunden die keine Karte besitzen bestummen, indem wir das Roll-up Fenster von Kunden pivotiert haben auf Jahr-Monat und für vorhandene Transaktion eine 1 hinzugefügt haben und eine 0 für keine Transaktion, anschliessend analog das gleiche mit den potenziellen Kunden getan und dann den Jaccard Index berechnet und daraus von den potenziellen Kunden, ein fiktives issued.date abgeleitet. Ein wichtiger Punkt dabei war das pivotieren in Jahr-Monat, sowie die gleiche Anzahl an Spalten von den Karten Besitzer und potenziellen Kunden zu haben. Ein weitere wichtiger Punkt war, dass wir die account_ids für die Kartenbesitzer wie auch potenzielle Kunden indexiert haben, da diese bei der Jaccard-Berechnungen stören und anschliessend aufgrund vom Index auf unsere account_ids der Kartenbesitzer wie auch potenzielle Kunden wieder zugewiesen haben. Damit in diesem wichtigen Schritt keine Falsche Zuweisungen stattfinden, wurde davor nach account_ids aufsteigend sortiert. Weiter gab es mehrere gleiche maximal höchste Jaccard-Werte für einen potenzielle Kunden mit mehreren Kartenbesitzer, um dieses Problem zu lösen, wurde dann random ein Kartenbesitzer als Vergleich genommen. 
+
+Abschnitt 4.4 bis 4.5 dient als Vergleich und Data Wrangling der Transaktionellen Daten für die potenziellen Kunden sowie deren Vergleich zu den Kartenbesitzer. 
+
+Die wichtigsten Dataframes die wir brauchen sind:
+`data` => grosses gejointes Dataframe
+`buyers` => Transkations Dataframe von Kartenbesitzer innerhalb des Roll-up Fenster
+`non_buyers` => Transkations Dataframe von potenziellen Kunden innerhalb des Roll-up Fenster
+
+# 6. Event Bezogene Kundeninformationen 
 Erzeugen event-bezogener Kundeninformationen für 12 Monate vor 
 Kreditkartenkauf (analog für Nicht-Käufer).
 
-## 5.1 Kundeninformation für 12 Monate von Käufer
+## 6.1 Kundeninformationen extrahieren
+Wir schreiben hier Funktionen die uns erlaubt, Kundeninformationen aus den Transaktions Dataframes für Käufer und Nicht-Käufer zu extrahieren.
+(Vermögen und Umsätze werden in Abschnitt 7. behandelt)
+
+```{r}
+# Add sufix to column name
+add_suffix <- function(data, suffix) {
+  colnames(data) <- paste(colnames(data), suffix, sep = ".")
+  return(data)
+}
+
+buyers <- add_suffix(buyers, "trans")
+buyers
+non_buyers <- add_suffix(non_buyers, "trans")
+non_buyers
+
+```
+
+## 6.2 Kundeninformation für 12 Monate von Käufer
 ```{r}
 
 ```
 
-## 5.2 Kundeninformation für 12 Monate von Nicht-Käufer
+## 6.3 Kundeninformation für 12 Monate von Nicht-Käufer
 ```{r}
 
 ```
 
-# 6. Vermögen & Umsätze
+# 7. Vermögen & Umsätze
 Konstruieren der Vermögen und Umsätze im Rollup-Fenster auf Basis 
 der Transaktionshistorie.
 
-## 6.1 Vermögen
+## 7.1 Vermögen
 ```{r}
 
 ```
 
-## 6.2 Umsätze
+## 7.2 Umsätze
 ```{r}
 
 ```
 
-# 7. Kunden-spezifische statistische Kennzahlen
+# 8. Kunden-spezifische statistische Kennzahlen
 Herleiten Kunden-spezifischer, statistischer Kennzahlen für Vermögen 
 und Umsätze im Rollup-Fenster mittels Funktionen.
 
-## 7.1 Funktion
+## 8.1 Funktion
 ```{r}
 
 ```
 
-## 7.2 Statistische Kennzahlen für Vermögen
+## 8.2 Statistische Kennzahlen für Vermögen
 ```{r}
 
 ```
 
-## 7.3 Statistische Kennzahlen für Umsätze
+## 8.3 Statistische Kennzahlen für Umsätze
 ```{r}
 
 ```
 
-## 8. Kombination von Event Informationen & Kreditkarten Käufer
+## 9. Kombination von Event Informationen & Kreditkarten Käufer
 Kombinieren event-bezogener Informationen von KreditkartenKäufern und Nicht-Käufern.
 
-## 8.1 Kombination
+## 9.1 Kombination
 ```{r}
 
 ```
 
-# 9. Bereinigung
+# 10. Bereinigung
 Bereinigen unnötiger Informationen (z.B. IDs) und Überprüfen der 
 Struktur der Modellierungsdaten mittels explorativer Datenanalyse.
 
-## 9.1 Daten Bereinigen
+## 10.1 Daten Bereinigen
 ```{r}
 
 ```
 
-## 9.2 Daten explorieren
+## 10.2 Daten explorieren
 ```{r}
 
 ```
 
-# 10. Partitionierung
+# 11. Partitionierung
 Partitionieren der Daten in Trainings- und Testdaten.
 
-## 10.1 Train-Test Split
+## 11.1 Train-Test Split
 ```{r}
 
 ```
 
-# 11. Baseline Modell
+# 12. Baseline Modell
 Erstellen eines Baseline Modelles mittels logistischer Regression und 
 den Informationen “Alter”, “Geschlecht”, “Domizilregion”, 
 “Vermögen” und “Umsatz” vor Kreditkartenkauf. 
 
-## 11.1 Logistische Regression
+## 12.1 Logistische Regression
 ```{r}
 
 ```
 
-# 12. Verbesserung des Baseline Modell
+# 13. Verbesserung des Baseline Modell
 Systematisches Explorieren von Verbesserungsmöglichkeiten des 
 Baseline Modelles durch Erweiterung erklärender Variablen, 
 Verwendung anderer Algorithmen und Optimierung.
 
-## 12.1 Erweiterung 
+## 13.1 Erweiterung 
 ```{r}
 
 ```
 
-## 12.2 Andere Algorithmen 
+## 13.2 Andere Algorithmen 
 ```{r}
 
 ```
 
-## 12.3 Andere Optimierungen
+## 13.3 Andere Optimierungen
 ```{r}
 
 ```
 
-# 13. Vergleich der Modelle
+# 14. Vergleich der Modelle
 Vergleichen der Kandidatenmodelle und identifizieren des bzgl. 
 Performance “besten” Modelles mit ROC, AUC und Precision.
 
-## 13.1 Modell Vergleich
+## 14.1 Modell Vergleich
 ```{r}
 
 ```
 
 
-# 14. Top-N Kunden 
+# 15. Top-N Kunden 
  Quantitatives Untersuchen der Unterschiede von Top-N Kunden Listen verschiedener Modelle
  
-## 14.1 Top-N Kunden Vergleich von Modellen
+## 15.1 Top-N Kunden Vergleich von Modellen
 ```{r}
 
 ```
 
  
-# 15. Wichtigkeit und Balancierung
+# 16. Wichtigkeit und Balancierung
 Untersuchen der globalen Wichtigkeit der Einflussfaktoren des 
 “besten” Modelles und Reduzieren des “besten” Modelles mittels 
 Balancieren von globaler Wichtigkeit und Modellperformance.
 
-## 15.1 Wichtigkeit
+## 16.1 Wichtigkeit
 ```{r}
 
 ```
 
-## 15.2 Balancierung 
+## 16.2 Balancierung 
 ```{r}
 
 ```
 
 
-# 16. Beschreibung 
+# 17. Beschreibung 
 Beschreiben des Mehrwerts des “finalen” Modelles in der Praxis.
 ```{r}
 

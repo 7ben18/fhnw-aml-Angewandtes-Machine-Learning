@@ -1739,6 +1739,24 @@ Die wichtigsten Dataframes die wir brauchen sind:
 `buyers` => Transkations Dataframe von Kartenbesitzer innerhalb des Roll-up Fenster
 `non_buyers` => Transkations Dataframe von potenziellen Kunden innerhalb des Roll-up Fenster
 
+## 5.1 Speicher Putzen
+Wir bereinigen den Speicher indem wir alle Daten und Variabeln entfernen die wir nicht mehr benötigen, da ich ansonsten Probleme mit dem Zwischenspeicher erhalte und das Notebook langsam wird.
+```{r}
+all_objects <- ls()
+remove_objects <- setdiff(all_objects, c("data", "buyers", "non_buyers"))
+rm(list = remove_objects)
+print(ls())
+```
+
+## 5.2 Export der Daten
+```{r}
+library(writexl)
+
+write_xlsx(data, "data_export/data.xlsx")
+write_xlsx(buyers, "data_export/buyers.xlsx")
+write_xlsx(non_buyers, "data_export/non_buyers.xlsx")
+```
+
 # 6. Event Bezogene Kundeninformationen 
 Erzeugen event-bezogener Kundeninformationen für 12 Monate vor 
 Kreditkartenkauf (analog für Nicht-Käufer).
@@ -1752,9 +1770,7 @@ buyers
 non_buyers
 ```
 
-
 ### 6.1.1 Funktion Suffix
-
 ```{r}
 # Add sufix to column name
 add_suffix <- function(data, suffix) {
@@ -1786,89 +1802,174 @@ extract_count <- function(data, trans) {
   # extract from trans date the min and max date but just year-month
   min_date <- min(format(as.Date(trans$date), "%Y-%m"))
   max_date <- max(format(as.Date(trans$date), "%Y-%m"))
-  
+
   # append "-01" to min_date and max_date
   min_date <- paste(min_date, "-01", sep = "")
   max_date <- paste(max_date, "-01", sep = "")
-  
+
   # create an array between min_date and max_date 1 months apart
   date_range <- seq.Date(from = as.Date(min_date), to = as.Date(max_date), by = "month")
   year_month_range <- format(date_range, "%Y-%m")
-  
+
   # if there is a column that does not exist in non_buyers_pivot and buyer but in year_month_range, add it and set value to 0
   for (col in year_month_range) {
     if (!(col %in% colnames(data))) {
       data[[col]] <- 0
     }
   }
-  
+
   # sort datafarme
   data <- data %>%
-  select(account_id.trans, sort(year_month_range))
-  
+    select(account_id.trans, sort(year_month_range))
+
   return(data)
 }
 ```
 
-
-### 6.1.3 Funktion Kategorische One-Hot Encoding
+### 6.1.3 Funktion Kategorische Variablen
 ```{r}
-one_hot_encode <- function(data_frame, col_name) {
-  # Check if the column exists in the data frame
-  if (!col_name %in% names(data_frame)) {
-    stop("The specified column does not exist in the data frame.")
-  }
-  
-  # Replace NA values with "Unknown"
-  data_frame[[col_name]][is.na(data_frame[[col_name]])] <- "Unknown"
-  
-  # Convert the column to a factor
-  data_frame[[col_name]] <- as.factor(data_frame[[col_name]])
-  
-  # One-hot encode the column
-  one_hot <- model.matrix(~ data_frame[[col_name]] - 1)
-  
-  # Convert the matrix to a data frame
-  one_hot_df <- as.data.frame(one_hot)
-  
-  # Bind the one-hot encoded data frame to the original data frame (excluding the original column)
-  new_data_frame <- cbind(data_frame[, !(names(data_frame) == col_name)], one_hot_df)
-  
-  return(new_data_frame)
+# Groupby account_id and count the number of occurenc for a catergorical variable
+extract_count_categorical <- function(data, col_name) {
+  col_name_sym <- as.name(col_name)
+
+  data %>%
+    mutate(!!col_name_sym := if_else(!!col_name_sym == "", "Unknown", !!col_name_sym)) %>%
+    group_by(account_id.trans, !!col_name_sym) %>%
+    summarise(count = n(), .groups = "drop") %>%
+    pivot_wider(
+      id_cols = account_id.trans,
+      names_from = !!col_name_sym,
+      values_from = count,
+      values_fill = 0
+    )
 }
-
 ```
-
 
 
 ## 6.2 Kundeninformation für 12 Monate von Käufer
 ```{r}
 # extract number of transaction for year_month
-extract_count(buyers, trans)
+info_buyers <- extract_count(buyers, trans)
+# add sufix .n_trans
+info_buyers <- add_suffix(info_buyers, "n_trans") %>% rename("account_id.trans" = "account_id.trans.n_trans")
+
+info_buyers
+
+info_cat_buyers <- extract_count_categorical(buyers, "type.trans") %>%
+  rename(
+    "type.credit.n_trans" = "CREDIT",
+    "type.withdrawal.n_trans" = "WITHDRAWAL",
+    "type.unkown.n_trans" = "NA"
+  ) %>%
+  inner_join(extract_count_categorical(buyers, "operation.trans") %>%
+    rename(
+      "opera.credit_in_cash.n_trans" = "CREDIT IN CASH",
+      "opera.remitt_to_anoth_bank_.n_trans" = "REMITTANCE TO ANOTHER BANK",
+      "opera.withdraw_in_cash.n_trans" = "WITHDRAWAL IN CASH",
+      "opera.unkown.n_trans" = "NA",
+      "opera.collect_from_anoth_bank.n_trans" = "COLLECTION FROM ANOTHER BANK"
+    ), by = "account_id.trans") %>%
+  inner_join(
+    extract_count_categorical(buyers, "k_symbol.trans") %>%
+      rename(
+        "k_symbol.houshold.n_trans" = "HOUSHOLD",
+        "k_symbol.interest_credited.n_trans" = "INTEREST CREDITED",
+        "k_symbol.statement_pay.n_trans" = "STATEMENT PAYMENT",
+        "k_symbol.unkown.n_trans" = "NA",
+        "k_symbol.insurance_pay.n_trans" = "INSURRANCE PAYMENT",
+        "k_symbol.loan_pay.n_trans" = "LOAN PAYMENT",
+        "k_symbol.old_age_pension.n_trans" = "OLD-AGE PENSION",
+        "k_symbol.interest_if_negativ_balance.n_trans" = "INTERES IF NEGATIVE BALANCE"
+      ),
+    by = "account_id.trans"
+  )
+
+info_cat_buyers
+
+info_buyers <- inner_join(info_buyers, info_cat_buyers, by = "account_id.trans")
+
+info_buyers
 ```
 
-
-```{r}
-# One Hot Encode type.trans
-one_hot_encode(buyers, "type.trans")
-```
 
 ## 6.3 Kundeninformation für 12 Monate von Nicht-Käufer
 ```{r}
 # extract number of transaction for year_month
-extract_count(non_buyers, trans)
+info_non_buyers <- extract_count(non_buyers, trans)
+# add sufix .n_trans
+info_non_buyers <- add_suffix(info_non_buyers, "n_trans") %>% rename("account_id.trans" = "account_id.trans.n_trans")
+
+info_non_buyers
+
+info_cat_non_buyers <- extract_count_categorical(non_buyers, "type.trans") %>%
+  rename(
+    "type.credit.n_trans" = "CREDIT",
+    "type.withdrawal.n_trans" = "WITHDRAWAL",
+    "type.unkown.n_trans" = "NA"
+  ) %>%
+  inner_join(extract_count_categorical(non_buyers, "operation.trans") %>%
+    rename(
+      "opera.credit_in_cash.n_trans" = "CREDIT IN CASH",
+      "opera.remitt_to_anoth_bank_.n_trans" = "REMITTANCE TO ANOTHER BANK",
+      "opera.withdraw_in_cash.n_trans" = "WITHDRAWAL IN CASH",
+      "opera.unkown.n_trans" = "NA",
+      "opera.collect_from_anoth_bank.n_trans" = "COLLECTION FROM ANOTHER BANK"
+    ), by = "account_id.trans") %>%
+  inner_join(
+    extract_count_categorical(non_buyers, "k_symbol.trans") %>%
+      rename(
+        "k_symbol.houshold.n_trans" = "HOUSHOLD",
+        "k_symbol.interest_credited.n_trans" = "INTEREST CREDITED",
+        "k_symbol.statement_pay.n_trans" = "STATEMENT PAYMENT",
+        "k_symbol.unkown.n_trans" = "NA",
+        "k_symbol.insurance_pay.n_trans" = "INSURRANCE PAYMENT",
+        "k_symbol.loan_pay.n_trans" = "LOAN PAYMENT",
+        "k_symbol.old_age_pension.n_trans" = "OLD-AGE PENSION",
+        "k_symbol.interest_if_negativ_balance.n_trans" = "INTERES IF NEGATIVE BALANCE"
+      ),
+    by = "account_id.trans"
+  )
+
+info_cat_non_buyers
+
+info_non_buyers <- inner_join(info_non_buyers, info_cat_non_buyers, by = "account_id.trans")
+
+info_non_buyers
 ```
+
+## 6.4 Resultate der Kundeninformationen
+```{r}
+info_buyers
+info_non_buyers
+```
+
 
 # 7. Vermögen & Umsätze
 Konstruieren der Vermögen und Umsätze im Rollup-Fenster auf Basis 
 der Transaktionshistorie.
 
-## 7.1 Vermögen
+```{r}
+buyers
+```
+
+
+## 7.1 Funktionen zur Extraktion von Vermögen und Umsätze
+```{r}
+install.packages("writexl")
+
+# load the package
+library(writexl)
+
+write_xlsx(buyers, "data_export/buyers.xlsx")
+```
+
+
+## 7.2 Vermögen
 ```{r}
 
 ```
 
-## 7.2 Umsätze
+## 7.3 Umsätze
 ```{r}
 
 ```

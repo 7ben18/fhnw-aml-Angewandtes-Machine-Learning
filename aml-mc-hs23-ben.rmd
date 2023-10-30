@@ -1599,14 +1599,16 @@ jaccard_df
 account_ids_has_card <- account_ids_has_card %>%
   mutate(
     row_index = row_number()
-  ) %>% select(buyers_card_index = row_index, account_id:start_lag_date)
+  ) %>%
+  select(buyers_card_index = row_index, account_id:start_lag_date)
 
 account_ids_has_card
 
 account_ids_no_cards <- account_ids_no_cards %>%
   mutate(
     row_index = row_number()
-  ) %>% select(non_buyers_card_index = row_index, account_id:account_creation_date.account)
+  ) %>%
+  select(non_buyers_card_index = row_index, account_id:account_creation_date.account)
 
 account_ids_no_cards
 ```
@@ -1619,7 +1621,8 @@ non_buyer_with_buyers_card_index <- inner_join(
   x = account_ids_no_cards,
   y = jaccard_df,
   by = "non_buyers_card_index"
-) %>% select(-c(non_buyers_card_index, account_creation_date.account)) %>% 
+) %>%
+  select(-c(non_buyers_card_index, account_creation_date.account)) %>%
   rename("non_buyer_account_id" = "account_id")
 
 non_buyer_with_buyers_card_index
@@ -1629,15 +1632,17 @@ non_buyers_fictive_date <- left_join(
   x = non_buyer_with_buyers_card_index,
   y = account_ids_has_card,
   by = "buyers_card_index"
-) %>% select(-c(start_date, start_lag_date, buyers_card_index)) %>% rename(
-  "buyer_account_id" = "account_id",
-  "fictive_issued.card" = "issued.card"
-) %>% select(non_buyer_account_id, fictive_issued.card, jaccard_value, buyer_account_id)
+) %>%
+  select(-c(start_date, start_lag_date, buyers_card_index)) %>%
+  rename(
+    "buyer_account_id" = "account_id",
+    "fictive_issued.card" = "issued.card"
+  ) %>%
+  select(non_buyer_account_id, fictive_issued.card, jaccard_value, buyer_account_id)
 
 non_buyers_fictive_date %>% arrange(desc(jaccard_value))
 
 non_buyers_fictive_date %>% arrange(non_buyer_account_id)
-
 ```
 
 
@@ -1664,14 +1669,16 @@ Wir selektieren von den Non-Buyers die account_id und das fiktive Datum, erstell
 
 ```{r}
 # als Vergleich account_ids_has_card
-account_ids_has_card <- account_ids_has_card %>% select(account_id:start_lag_date
-)
+account_ids_has_card <- account_ids_has_card %>% select(account_id:start_lag_date)
 account_ids_has_card
 
 # Create analoges Dataframe
-account_ids_without_card <- non_buyers_fictive_date %>% select(account_id = non_buyer_account_id, fictive_issued.card) %>% mutate(
-  start_date = fictive_issued.card %m-% months(13),
-  start_lag_date = fictive_issued.card %m-% months(1))
+account_ids_without_card <- non_buyers_fictive_date %>%
+  select(account_id = non_buyer_account_id, fictive_issued.card) %>%
+  mutate(
+    start_date = fictive_issued.card %m-% months(13),
+    start_lag_date = fictive_issued.card %m-% months(1)
+  )
 
 
 account_ids_without_card
@@ -1680,10 +1687,13 @@ non_buyers <- inner_join(
   x = account_ids_without_card,
   y = trans,
   by = "account_id"
-) %>% filter(
-  date >= start_date & date <= start_lag_date) %>% 
-  select(-c(start_date, start_lag_date)) %>% 
-  mutate(year_month = format(as.Date(date), "%Y-%m")) %>% select(account_id, issued.card = fictive_issued.card, date, year_month, type:bank)
+) %>%
+  filter(
+    date >= start_date & date <= start_lag_date
+  ) %>%
+  select(-c(start_date, start_lag_date)) %>%
+  mutate(year_month = format(as.Date(date), "%Y-%m")) %>%
+  select(account_id, issued.card = fictive_issued.card, date, year_month, type:bank)
 
 
 # print transaction table from buyers and non-buyers
@@ -1705,7 +1715,6 @@ visualize_account_balance(trans_within_range,
   window_size = 30,
   show_df = FALSE
 )
-
 ```
 
 # 5 Recap
@@ -1739,6 +1748,14 @@ Wir schreiben hier Funktionen die uns erlaubt, Kundeninformationen aus den Trans
 (Vermögen und Umsätze werden in Abschnitt 7. behandelt)
 
 ```{r}
+buyers
+non_buyers
+```
+
+
+### 6.1.1 Funktion Suffix
+
+```{r}
 # Add sufix to column name
 add_suffix <- function(data, suffix) {
   colnames(data) <- paste(colnames(data), suffix, sep = ".")
@@ -1749,22 +1766,97 @@ buyers <- add_suffix(buyers, "trans")
 buyers
 non_buyers <- add_suffix(non_buyers, "trans")
 non_buyers
-
 ```
 
+### 6.1.2 Funktion Anzahl Transaktion pro Jahr-Monat
+Extrahieren der Anzahl Transaktionen pro Jahr-Monat. 
 ```{r}
+# Create a function where you extract from column year_month the number of transaktion (count rows)
+extract_count <- function(data, trans) {
+  data <- data %>%
+    group_by(account_id.trans, year_month.trans) %>%
+    summarise(count = n(), .groups = "drop") %>%
+    pivot_wider(
+      id_cols = account_id.trans,
+      names_from = year_month.trans,
+      values_from = count,
+      values_fill = 0
+    )
+
+  # extract from trans date the min and max date but just year-month
+  min_date <- min(format(as.Date(trans$date), "%Y-%m"))
+  max_date <- max(format(as.Date(trans$date), "%Y-%m"))
+  
+  # append "-01" to min_date and max_date
+  min_date <- paste(min_date, "-01", sep = "")
+  max_date <- paste(max_date, "-01", sep = "")
+  
+  # create an array between min_date and max_date 1 months apart
+  date_range <- seq.Date(from = as.Date(min_date), to = as.Date(max_date), by = "month")
+  year_month_range <- format(date_range, "%Y-%m")
+  
+  # if there is a column that does not exist in non_buyers_pivot and buyer but in year_month_range, add it and set value to 0
+  for (col in year_month_range) {
+    if (!(col %in% colnames(data))) {
+      data[[col]] <- 0
+    }
+  }
+  
+  # sort datafarme
+  data <- data %>%
+  select(account_id.trans, sort(year_month_range))
+  
+  return(data)
+}
+```
+
+
+### 6.1.3 Funktion Kategorische One-Hot Encoding
+```{r}
+one_hot_encode <- function(data_frame, col_name) {
+  # Check if the column exists in the data frame
+  if (!col_name %in% names(data_frame)) {
+    stop("The specified column does not exist in the data frame.")
+  }
+  
+  # Replace NA values with "Unknown"
+  data_frame[[col_name]][is.na(data_frame[[col_name]])] <- "Unknown"
+  
+  # Convert the column to a factor
+  data_frame[[col_name]] <- as.factor(data_frame[[col_name]])
+  
+  # One-hot encode the column
+  one_hot <- model.matrix(~ data_frame[[col_name]] - 1)
+  
+  # Convert the matrix to a data frame
+  one_hot_df <- as.data.frame(one_hot)
+  
+  # Bind the one-hot encoded data frame to the original data frame (excluding the original column)
+  new_data_frame <- cbind(data_frame[, !(names(data_frame) == col_name)], one_hot_df)
+  
+  return(new_data_frame)
+}
 
 ```
+
 
 
 ## 6.2 Kundeninformation für 12 Monate von Käufer
 ```{r}
+# extract number of transaction for year_month
+extract_count(buyers, trans)
+```
 
+
+```{r}
+# One Hot Encode type.trans
+one_hot_encode(buyers, "type.trans")
 ```
 
 ## 6.3 Kundeninformation für 12 Monate von Nicht-Käufer
 ```{r}
-
+# extract number of transaction for year_month
+extract_count(non_buyers, trans)
 ```
 
 # 7. Vermögen & Umsätze

@@ -1743,7 +1743,7 @@ Die wichtigsten Dataframes die wir brauchen sind:
 Wir bereinigen den Speicher indem wir alle Daten und Variabeln entfernen die wir nicht mehr benötigen, da ich ansonsten Probleme mit dem Zwischenspeicher erhalte und das Notebook langsam wird.
 ```{r}
 all_objects <- ls()
-remove_objects <- setdiff(all_objects, c("data", "buyers", "non_buyers"))
+remove_objects <- setdiff(all_objects, c("data", "buyers", "non_buyers", "trans"))
 rm(list = remove_objects)
 print(ls())
 ```
@@ -1760,6 +1760,8 @@ write_xlsx(non_buyers, "data_export/non_buyers.xlsx")
 # 6. Event Bezogene Kundeninformationen 
 Erzeugen event-bezogener Kundeninformationen für 12 Monate vor 
 Kreditkartenkauf (analog für Nicht-Käufer).
+
+
 
 ## 6.1 Kundeninformationen extrahieren
 Wir schreiben hier Funktionen die uns erlaubt, Kundeninformationen aus den Transaktions Dataframes für Käufer und Nicht-Käufer zu extrahieren.
@@ -1965,11 +1967,20 @@ write_xlsx(buyers, "data_export/buyers.xlsx")
 
 
 ## 7.2 Vermögen
+
+Ende Monat .> Vermoegen, aufpassen bei mehreren Transkationen (Reihefolge)
+
+
 ```{r}
 
 ```
 
 ## 7.3 Umsätze
+
+Analog Bankauszug anschauen
+Habe-Umsatz
+Soll-Umsatz
+
 ```{r}
 
 ```

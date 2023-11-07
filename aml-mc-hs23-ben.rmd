@@ -25,6 +25,7 @@ library(DataExplorer)
 library(lubridate)
 library(eeptools)
 library(zoo)
+library(arrow)
 ```
 
 
@@ -1645,34 +1646,26 @@ non_buyers_fictive_date %>% arrange(desc(jaccard_value))
 non_buyers_fictive_date %>% arrange(non_buyer_account_id)
 ```
 
+
+```{r}
+non_buyers_fictive_date
+```
 ```{r}
 data
 ```
 
 
-### 4.3.6 
+### 4.3.6 Fiktives Kaufdatum in grosses Dataframe hinzufuegen
 ```{r}
 # impute issued.card NA values in data with fictive_issued.card value by first column account_id
-data <- data %>%
-  left_join(
-    x = non_buyers_fictive_date,
-    y = data,
-    by = "non_buyer_account_id"
-  ) %>%
-  select(-c(non_buyer_account_id, jaccard_value, buyer_account_id)) %>%
-  rename(
-    "issued.card" = "fictive_issued.card"
-  ) %>%
-  mutate(
-    issued.card = ifelse(is.na(issued.card.x), issued.card.y, issued.card.x)
-  ) %>%
-  select(-c(issued.card.x, issued.card.y))
-```
+data <- left_join(data, non_buyers_fictive_date, by = c("account_id" = "non_buyer_account_id")) %>% mutate(
+  issued.card = coalesce(issued.card, fictive_issued.card)) %>% select(-c(fictive_issued.card, jaccard_value, buyer_account_id))
 
-```{r}
+sum(is.na(data$issued.date))
+
 data
-```
 
+```
 
 ## 4.4 Vergleich 
 Visualisierungstest von non_buyer_account_id = 91 und buyer_account_id 3725, mittels Funktion aus 3.4
@@ -1779,18 +1772,30 @@ print(ls())
 
 ## 5.2 Export der Daten
 ```{r}
-library(writexl)
-
-write_xlsx(data, "data_export/data.xlsx")
-write_xlsx(buyers, "data_export/buyers.xlsx")
-write_xlsx(non_buyers, "data_export/non_buyers.xlsx")
+write_parquet(data, "data_export/data.parquet")
+write_parquet(trans, "data_export/trans.parquet")
+write_parquet(buyers, "data_export/buyers.parquet")
+write_parquet(non_buyers, "data_export/non_buyers.parquet")
 ```
+
+## 5.3 Import der Daten
+Damit wir nicht immer das Notebook neu laufen müssen werden hier die Daten wieder eingelesen. 
+```{r}
+data <- read_parquet("data_export/data.parquet")
+trans <- read_parquet("data_export/trans.parquet")
+buyers <- read_parquet("data_export/buyers.parquet")
+non_buyers <- read_parquet("data_export/non_buyers.parquet")
+
+data
+trans
+buyers
+non_buyers
+```
+
 
 # 6. Event Bezogene Kundeninformationen 
 Erzeugen event-bezogener Kundeninformationen für 12 Monate vor 
 Kreditkartenkauf (analog für Nicht-Käufer).
-
-
 
 ## 6.1 Kundeninformationen extrahieren
 Wir schreiben hier Funktionen die uns erlaubt, Kundeninformationen aus den Transaktions Dataframes für Käufer und Nicht-Käufer zu extrahieren.
@@ -1875,13 +1880,6 @@ extract_count_categorical <- function(data, col_name) {
     )
 }
 ```
-
-### 6.1.4 Funktion für Alter zur gegebenen issued.card Zeit
-Wir brechnen das Alter des Kunden zur gegebenen Zeit. 
-```{r}
-buyers
-```
-
 
 
 ## 6.2 Kundeninformation für 12 Monate von Käufer
@@ -1975,10 +1973,20 @@ info_non_buyers <- inner_join(info_non_buyers, info_cat_non_buyers, by = "accoun
 info_non_buyers
 ```
 
-## 6.4 Resultate der Kundeninformationen
+## 6.4 Kundenalter bei Kaufdatum
+Wir berechnen direkt das Alter zur gegebenen issued.card Zeit indem wir das grosses Dataframe "data" mit einer weiteren Spalte erweitern namens: age_issued.card, dies erreichen wir indem wir vom Geburtstdatum und issued.card Datum das Alter heraus extrahieren.
+```{r}
+data$age_issued.card <- as.integer(floor(difftime(data$issued.card, data$birht_number.client, units = "days") / 365.25))
+
+data
+```
+
+
+## 6.5 Resultate der Kundeninformationen
 ```{r}
 info_buyers
 info_non_buyers
+data %>% select(age_issued.card)
 ```
 
 
@@ -1987,20 +1995,45 @@ Konstruieren der Vermögen und Umsätze im Rollup-Fenster auf Basis
 der Transaktionshistorie.
 
 ```{r}
-buyers
+unique(non_buyers$operation.trans)
 ```
 
+## 7.1 Bestimmung von Gutschrift und Belastung
+Es gibt Gesamthaft 5 Transaktions Operationen, 
+Gutschriften sind folgende Operationen: NA, Collection from Another Bank, Credit in cash
+Belastungen sind folgende Operationen: Withdrawal in Cash, Remittance to Another Bank
 
-## 7.1 Funktionen zur Extraktion von Vermögen und Umsätze
 ```{r}
+gutschrift_belastung <- function(df) {
+  df <- df %>%
+    mutate(
+      gutschrift.trans = case_when(
+        operation.trans %in% c(NA, "COLLECTION FROM ANOTHER BANK", "CREDIT IN CASH") ~ amount.trans,
+        TRUE ~ 0
+      ),
+      belastung.trans = case_when(
+        !operation.trans %in% c(NA, "COLLECTION FROM ANOTHER BANK", "CREDIT IN CASH") ~ amount.trans,
+        TRUE ~ 0
+      )
+    ) %>% select(-c(amount.trans))
+  return(df)
+}
 
+non_buyers <- gutschrift_belastung(non_buyers)
+buyers <- gutschrift_belastung(buyers)
+
+non_buyers
+buyers
 ```
 
 
 ## 7.2 Vermögen
 
-Ende Monat .> Vermoegen, aufpassen bei mehreren Transkationen (Reihefolge)
+Bei genauerem betrachten der Transaktionshistorie von mehreren Kunden ist mir aufgefallen, dass die letzte Transkation im Monat immer die von der Bank selber ist. type.trans ist immer "CREDIT" und operations.trans ein NA Wert. Diese Art der Transkation markiert ein Enddatum des Monates und ist somit die letzte Transkation des Monates!
 
+Bemerkt habe ich weiter, dass der Monatlicher Umsatz berechnet werden kann indem die Differenz vom Enddatum des Monates mit dem vorherhigen Enddatum des vorherhigen Monates berechnet werden kann. 
+
+Wir kennen die letzte Transaktion des Monates und könnnen somit immer den Saldo ablesen. Hier filtern wir nach den bestimmten Transaktionen, lesen das Vermoegen aus und pivotieren anschliessend das Dataframe, damit wir auf einer Zeile direkt herauslesen können, welches Vermögen der Kunde am Ende des Monates aufweist. 
 
 ```{r}
 
@@ -2008,9 +2041,7 @@ Ende Monat .> Vermoegen, aufpassen bei mehreren Transkationen (Reihefolge)
 
 ## 7.3 Umsätze
 
-Analog Bankauszug anschauen
-Habe-Umsatz
-Soll-Umsatz
+Hier aggregieren wir die Gutschrift und Belastungsspalten mittels einer kummulierten Summe und pivotieren diese anschliessend, dass wir aus einer Zeile den monatlichen Umsatz Gutschrift und Monatlichen Umsatz Belastung sehen. 
 
 ```{r}
 

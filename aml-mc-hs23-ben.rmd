@@ -1645,6 +1645,34 @@ non_buyers_fictive_date %>% arrange(desc(jaccard_value))
 non_buyers_fictive_date %>% arrange(non_buyer_account_id)
 ```
 
+```{r}
+data
+```
+
+
+### 4.3.6 
+```{r}
+# impute issued.card NA values in data with fictive_issued.card value by first column account_id
+data <- data %>%
+  left_join(
+    x = non_buyers_fictive_date,
+    y = data,
+    by = "non_buyer_account_id"
+  ) %>%
+  select(-c(non_buyer_account_id, jaccard_value, buyer_account_id)) %>%
+  rename(
+    "issued.card" = "fictive_issued.card"
+  ) %>%
+  mutate(
+    issued.card = ifelse(is.na(issued.card.x), issued.card.y, issued.card.x)
+  ) %>%
+  select(-c(issued.card.x, issued.card.y))
+```
+
+```{r}
+data
+```
+
 
 ## 4.4 Vergleich 
 Visualisierungstest von non_buyer_account_id = 91 und buyer_account_id 3725, mittels Funktion aus 3.4
@@ -1738,6 +1766,7 @@ Die wichtigsten Dataframes die wir brauchen sind:
 `data` => grosses gejointes Dataframe
 `buyers` => Transkations Dataframe von Kartenbesitzer innerhalb des Roll-up Fenster
 `non_buyers` => Transkations Dataframe von potenziellen Kunden innerhalb des Roll-up Fenster
+
 
 ## 5.1 Speicher Putzen
 Wir bereinigen den Speicher indem wir alle Daten und Variabeln entfernen die wir nicht mehr benötigen, da ich ansonsten Probleme mit dem Zwischenspeicher erhalte und das Notebook langsam wird.
@@ -1846,6 +1875,13 @@ extract_count_categorical <- function(data, col_name) {
     )
 }
 ```
+
+### 6.1.4 Funktion für Alter zur gegebenen issued.card Zeit
+Wir brechnen das Alter des Kunden zur gegebenen Zeit. 
+```{r}
+buyers
+```
+
 
 
 ## 6.2 Kundeninformation für 12 Monate von Käufer
@@ -1957,12 +1993,7 @@ buyers
 
 ## 7.1 Funktionen zur Extraktion von Vermögen und Umsätze
 ```{r}
-install.packages("writexl")
 
-# load the package
-library(writexl)
-
-write_xlsx(buyers, "data_export/buyers.xlsx")
 ```
 
 

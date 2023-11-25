@@ -1075,9 +1075,7 @@ Wir schreiben eine Funktion die uns erlaubt nach beliebige accounts zu filtern d
 
 ```{r}
 visualize_account_balance <- function(transactions,
-                                      accounts_to_filter,
-                                      window_size = 30,
-                                      show_df = FALSE) {
+                                      accounts_to_filter) {
   # Filter transactions by account
   filtered_transactions <- transactions %>%
     filter(account_id %in% accounts_to_filter)
@@ -1088,35 +1086,14 @@ visualize_account_balance <- function(transactions,
     return(NULL)
   }
 
-  # Calculate rolling mean
-  trans_with_rolling_mean <- filtered_transactions %>%
-    arrange(account_id, date) %>%
-    group_by(account_id) %>%
-    mutate(rolling_mean = rollmean(balance, k = window_size, fill = NA, align = "center"))
-
-  if (show_df) {
-    print(trans_with_rolling_mean)
-  }
-
   # visualisere balanace and rolling mean
-  plot <- ggplot(trans_with_rolling_mean, aes(x = date)) +
+  plot <- ggplot(filtered_transactions, aes(x = date)) +
     geom_line(aes(
       y = balance,
       color = as.factor(account_id)
     )) +
-    geom_line(
-      aes(
-        y = rolling_mean,
-        color = as.factor(account_id)
-      ),
-      linetype = "solid"
-    ) +
-    geom_vline(
-      xintercept = as.numeric(unique(filtered_transactions$kaufdatum.card)),
-      linetype = "dotdash", color = "black",
-    ) +
     labs(
-      title = paste(window_size, "-Day Rolling Mean Over Time"),
+      title = "Balance vs. Date",
       x = "Date",
       y = "Balance",
       color = "Account ID"
@@ -1126,9 +1103,7 @@ visualize_account_balance <- function(transactions,
 }
 
 visualize_account_balance(buyers,
-  accounts_to_filter = c(7, 14),
-  window_size = 30,
-  show_df = TRUE
+  accounts_to_filter = c(7, 14)
 )
 ```
 
@@ -1658,13 +1633,15 @@ data
 ### 4.3.6 Fiktives Kaufdatum in grosses Dataframe hinzufuegen
 ```{r}
 # impute issued.card NA values in data with fictive_issued.card value by first column account_id
-data <- left_join(data, non_buyers_fictive_date, by = c("account_id" = "non_buyer_account_id")) %>% mutate(
-  issued.card = coalesce(issued.card, fictive_issued.card)) %>% select(-c(fictive_issued.card, jaccard_value, buyer_account_id))
+data <- left_join(data, non_buyers_fictive_date, by = c("account_id" = "non_buyer_account_id")) %>%
+  mutate(
+    issued.card = coalesce(issued.card, fictive_issued.card)
+  ) %>%
+  select(-c(fictive_issued.card, jaccard_value, buyer_account_id))
 
 sum(is.na(data$issued.date))
 
 data
-
 ```
 
 ## 4.4 Vergleich 
@@ -1673,15 +1650,11 @@ Visualisierungstest von non_buyer_account_id = 91 und buyer_account_id 3725, mit
 Die Funnktion visualisiert, dass die Ueberlappung von non-buyer und buyer funktioniert hat und der Code von 4.3 funktioniert! 
 ```{r}
 visualize_account_balance(trans,
-  accounts_to_filter = c(91, 3725),
-  window_size = 30,
-  show_df = FALSE
+  accounts_to_filter = c(91, 3725)
 )
 
 visualize_account_balance(trans,
-  accounts_to_filter = c(1390, 2409),
-  window_size = 30,
-  show_df = FALSE
+  accounts_to_filter = c(1390, 2409)
 )
 ```
 
@@ -1726,15 +1699,11 @@ trans_within_range <- rbind(buyers, non_buyers)
 trans_within_range
 
 visualize_account_balance(trans_within_range,
-  accounts_to_filter = c(91, 3725),
-  window_size = 30,
-  show_df = FALSE
+  accounts_to_filter = c(91, 3725)
 )
 
 visualize_account_balance(trans_within_range,
-  accounts_to_filter = c(1390, 2409),
-  window_size = 30,
-  show_df = FALSE
+  accounts_to_filter = c(1390, 2409)
 )
 ```
 
@@ -2002,6 +1971,7 @@ unique(non_buyers$operation.trans)
 Es gibt Gesamthaft 5 Transaktions Operationen, 
 Gutschriften sind folgende Operationen: NA, Collection from Another Bank, Credit in cash
 Belastungen sind folgende Operationen: Withdrawal in Cash, Remittance to Another Bank
+In der Nachfolgende Funktion extrahieren wir von der Spalte Amount -> Gutschrift und Belastung.
 
 ```{r}
 gutschrift_belastung <- function(df) {
@@ -2015,7 +1985,8 @@ gutschrift_belastung <- function(df) {
         !operation.trans %in% c(NA, "COLLECTION FROM ANOTHER BANK", "CREDIT IN CASH") ~ amount.trans,
         TRUE ~ 0
       )
-    ) %>% select(-c(amount.trans))
+    ) %>%
+    select(-c(amount.trans))
   return(df)
 }
 
@@ -2036,7 +2007,28 @@ Bemerkt habe ich weiter, dass der Monatlicher Umsatz berechnet werden kann indem
 Wir kennen die letzte Transaktion des Monates und könnnen somit immer den Saldo ablesen. Hier filtern wir nach den bestimmten Transaktionen, lesen das Vermoegen aus und pivotieren anschliessend das Dataframe, damit wir auf einer Zeile direkt herauslesen können, welches Vermögen der Kunde am Ende des Monates aufweist. 
 
 ```{r}
+buyers
+```
 
+
+```{r}
+balance_end_month <- function(df, display_df = FALSE) {
+  df <- df %>%
+    filter(is.na(operation.trans) & type.trans == "CREDIT") %>%
+    select(account_id.trans,
+      end_month = year_month.trans,
+      balance.trans
+    )
+
+  if (display_df) {
+    print(df)
+  }
+
+  return(df)
+}
+
+buyers_balance <- balance_end_month(buyers, display_df = TRUE)
+non_buyers_balance <- balance_end_month(non_buyers, display_df = TRUE)
 ```
 
 ## 7.3 Umsätze
@@ -2044,17 +2036,115 @@ Wir kennen die letzte Transaktion des Monates und könnnen somit immer den Saldo
 Hier aggregieren wir die Gutschrift und Belastungsspalten mittels einer kummulierten Summe und pivotieren diese anschliessend, dass wir aus einer Zeile den monatlichen Umsatz Gutschrift und Monatlichen Umsatz Belastung sehen. 
 
 ```{r}
+umsatz_end_month <- function(df, display_df = FALSE) {
+  result <- df %>%
+    select(account_id.trans, year_month.trans, gutschrift.trans, belastung.trans) %>%
+    group_by(account_id.trans, year_month.trans) %>%
+    summarise(
+      total_gutschrift = sum(gutschrift.trans),
+      total_belastung = sum(belastung.trans),
+      .groups = 'drop'
+    ) %>% 
+    rename("end_month" = "year_month.trans")
+
+  if (display_df) {
+    print(result)
+  }
+
+  return(result)
+}
+
+buyers_umsatz <- umsatz_end_month(buyers, display_df = TRUE)
+non_buyers_umsatz <- umsatz_end_month(non_buyers, display_df = TRUE)
+```
+
+## 7.4 Umsatz und Vermögen zusammenjoinen
+
+Warum haben wir eine Differenz zwischen dem buyers_balance und buyers_umsatz in Bezug auf ihre Anzahl Rows?
+Antowort: Der Buyers Datensatz wurde durch das Roll-up Fenster manipuliert, welches durch das Kaufdatum - 13 Monate gerechnet wurde (Auf Tage genau und nicht Monate).
+Bsp: Kaufdatum: 15.05.1999 -> Ergibt ein Rollup Fenster beginnend von 15.04.1998. 
+
+Dadurch das wir nach type.trans == "CREDIT" und is.na(opeartion.trans) filtern, erhalten wir von dem jeweiligen Account_id immer die Transaktion in einem letzten Monat. Es kommt nun vor, dass wir dann für den aller letzten Monat im Rollup Fenster uns nicht am Ende eines Monates befinden und somit der Filter für den aller letzten Monat keine Balance auslesen kann. 
+
+Beim Umsatz wiederum achten wir nicht darauf und summieren den Monat nach Gutschrift und Belastung. 
+
+Das ist der Grund für die Differenz der Anzahl Rows bei den Dataframes.
+Wir gehen nun so vor, dass wir nun einen left_join auf buyers_balance machen, denn dort sind wir sicher, dass wir nicht mehr als 12 Zeilen pro Account_id haben.
+```{r}
+buyers_balance_umsatz <- left_join(buyers_balance, buyers_umsatz, by = c("account_id.trans", "end_month"))
+
+non_buyers_balance_umsatz <- left_join(non_buyers_balance, non_buyers_umsatz, by = c("account_id.trans", "end_month"))
+
+buyers_balance_umsatz
+non_buyers_balance_umsatz
+
+write_parquet(buyers_balance_umsatz, "data_export/buyers_balance_umsatz.parquet")
+write_parquet(non_buyers_balance_umsatz, "data_export/non_buyers_balance_umsatz.parquet")
 
 ```
+
 
 # 8. Kunden-spezifische statistische Kennzahlen
 Herleiten Kunden-spezifischer, statistischer Kennzahlen für Vermögen 
 und Umsätze im Rollup-Fenster mittels Funktionen.
 
 ## 8.1 Funktion
-```{r}
 
+```{r}
+summarize_transactions <- function(df) {
+  # Convert end_month to Date type
+  df <- df %>% mutate(end_month = ymd(paste0(end_month, "-01")))
+  
+  df %>%
+    group_by(account_id.trans) %>%
+    summarize(
+      min_balance = min(balance.trans, na.rm = TRUE),
+      max_balance = max(balance.trans, na.rm = TRUE),
+      mean_balance = mean(balance.trans, na.rm = TRUE),
+      median_balance = median(balance.trans, na.rm = TRUE),
+      sd_balance = sd(balance.trans, na.rm = TRUE),
+      last_balance = last(balance.trans),
+      trend_balance = tidy(lm(balance.trans ~ end_month, data = cur_data()))$estimate[2],
+      spearman_balance = cor(balance.trans, as.numeric(end_month), method = "spearman", use = "complete.obs"),
+
+      min_gutschrift = min(total_gutschrift, na.rm = TRUE),
+      max_gutschrift = max(total_gutschrift, na.rm = TRUE),
+      mean_gutschrift = mean(total_gutschrift, na.rm = TRUE),
+      median_gutschrift = median(total_gutschrift, na.rm = TRUE),
+      sd_gutschrift = sd(total_gutschrift, na.rm = TRUE),
+      last_gutschrift = last(total_gutschrift),
+      trend_gutschrift = tidy(lm(total_gutschrift ~ end_month, data = cur_data()))$estimate[2],
+      spearman_gutschrift = cor(total_gutschrift, as.numeric(end_month), method = "spearman", use = "complete.obs"),
+
+      min_belastung = min(total_belastung, na.rm = TRUE),
+      max_belastung = max(total_belastung, na.rm = TRUE),
+      mean_belastung = mean(total_belastung, na.rm = TRUE),
+      median_belastung = median(total_belastung, na.rm = TRUE),
+      sd_belastung = sd(total_belastung, na.rm = TRUE),
+      last_belastung = last(total_belastung),
+      trend_belastung = tidy(lm(total_belastung ~ end_month, data = cur_data()))$estimate[2],
+      spearman_belastung = cor(total_belastung, as.numeric(end_month), method = "spearman", use = "complete.obs")
+    )
+}
+
+# Call the function with your data frame (buyers_balance_umsatz)
+summarize_transactions(buyers_balance_umsatz)
 ```
+
+```{r}
+summarize_transactions_last_three_months <- function(df) {
+  # Convert end_month to Date type
+  df <- df %>% mutate(end_month = ymd(paste0(end_month, "-01")))
+  
+  df %>%
+    group_by(account_id.trans) %>%
+    filter(end_month >= max(end_month) - months(2))
+  
+summarize_transactions_last_three_months(buyers_balance_umsatz)
+```
+
+
+
 
 ## 8.2 Statistische Kennzahlen für Vermögen
 ```{r}

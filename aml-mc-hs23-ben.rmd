@@ -1990,11 +1990,11 @@ gutschrift_belastung <- function(df) {
   return(df)
 }
 
-non_buyers <- gutschrift_belastung(non_buyers)
-buyers <- gutschrift_belastung(buyers)
+non_buyers_g_b <- gutschrift_belastung(non_buyers)
+buyers_g_b <- gutschrift_belastung(buyers)
 
-non_buyers
-buyers
+non_buyers_g_b
+buyers_g_b
 ```
 
 
@@ -2005,10 +2005,6 @@ Bei genauerem betrachten der Transaktionshistorie von mehreren Kunden ist mir au
 Bemerkt habe ich weiter, dass der Monatlicher Umsatz berechnet werden kann indem die Differenz vom Enddatum des Monates mit dem vorherhigen Enddatum des vorherhigen Monates berechnet werden kann. 
 
 Wir kennen die letzte Transaktion des Monates und könnnen somit immer den Saldo ablesen. Hier filtern wir nach den bestimmten Transaktionen, lesen das Vermoegen aus und pivotieren anschliessend das Dataframe, damit wir auf einer Zeile direkt herauslesen können, welches Vermögen der Kunde am Ende des Monates aufweist. 
-
-```{r}
-buyers
-```
 
 
 ```{r}
@@ -2043,8 +2039,8 @@ umsatz_end_month <- function(df, display_df = FALSE) {
     summarise(
       total_gutschrift = sum(gutschrift.trans),
       total_belastung = sum(belastung.trans),
-      .groups = 'drop'
-    ) %>% 
+      .groups = "drop"
+    ) %>%
     rename("end_month" = "year_month.trans")
 
   if (display_df) {
@@ -2054,9 +2050,10 @@ umsatz_end_month <- function(df, display_df = FALSE) {
   return(result)
 }
 
-buyers_umsatz <- umsatz_end_month(buyers, display_df = TRUE)
-non_buyers_umsatz <- umsatz_end_month(non_buyers, display_df = TRUE)
+buyers_umsatz <- umsatz_end_month(buyers_g_b, display_df = TRUE)
+non_buyers_umsatz <- umsatz_end_month(non_buyers_g_b, display_df = TRUE)
 ```
+
 
 ## 7.4 Umsatz und Vermögen zusammenjoinen
 
@@ -2080,9 +2077,7 @@ non_buyers_balance_umsatz
 
 write_parquet(buyers_balance_umsatz, "data_export/buyers_balance_umsatz.parquet")
 write_parquet(non_buyers_balance_umsatz, "data_export/non_buyers_balance_umsatz.parquet")
-
 ```
-
 
 # 8. Kunden-spezifische statistische Kennzahlen
 Herleiten Kunden-spezifischer, statistischer Kennzahlen für Vermögen 
@@ -2091,11 +2086,10 @@ und Umsätze im Rollup-Fenster mittels Funktionen.
 ## 8.1 Funktion
 
 ```{r}
+## Full Roll-up Window
 summarize_transactions <- function(df) {
-  # Convert end_month to Date type
   df <- df %>% mutate(end_month = ymd(paste0(end_month, "-01")))
-  
-  df %>%
+  df_aggregated <- df %>%
     group_by(account_id.trans) %>%
     summarize(
       min_balance = min(balance.trans, na.rm = TRUE),
@@ -2105,8 +2099,7 @@ summarize_transactions <- function(df) {
       sd_balance = sd(balance.trans, na.rm = TRUE),
       last_balance = last(balance.trans),
       trend_balance = tidy(lm(balance.trans ~ end_month, data = cur_data()))$estimate[2],
-      spearman_balance = cor(balance.trans, as.numeric(end_month), method = "spearman", use = "complete.obs"),
-
+      spearman_balance = ifelse(sd(balance.trans, na.rm = TRUE) == 0, NA, cor(balance.trans, as.numeric(end_month), method = "spearman", use = "complete.obs")),
       min_gutschrift = min(total_gutschrift, na.rm = TRUE),
       max_gutschrift = max(total_gutschrift, na.rm = TRUE),
       mean_gutschrift = mean(total_gutschrift, na.rm = TRUE),
@@ -2114,8 +2107,7 @@ summarize_transactions <- function(df) {
       sd_gutschrift = sd(total_gutschrift, na.rm = TRUE),
       last_gutschrift = last(total_gutschrift),
       trend_gutschrift = tidy(lm(total_gutschrift ~ end_month, data = cur_data()))$estimate[2],
-      spearman_gutschrift = cor(total_gutschrift, as.numeric(end_month), method = "spearman", use = "complete.obs"),
-
+      spearman_gutschrift = ifelse(sd(total_gutschrift, na.rm = TRUE) == 0, NA, cor(total_gutschrift, as.numeric(end_month), method = "spearman", use = "complete.obs")),
       min_belastung = min(total_belastung, na.rm = TRUE),
       max_belastung = max(total_belastung, na.rm = TRUE),
       mean_belastung = mean(total_belastung, na.rm = TRUE),
@@ -2123,45 +2115,109 @@ summarize_transactions <- function(df) {
       sd_belastung = sd(total_belastung, na.rm = TRUE),
       last_belastung = last(total_belastung),
       trend_belastung = tidy(lm(total_belastung ~ end_month, data = cur_data()))$estimate[2],
-      spearman_belastung = cor(total_belastung, as.numeric(end_month), method = "spearman", use = "complete.obs")
+      spearman_belastung = ifelse(sd(total_belastung, na.rm = TRUE) == 0, NA, cor(total_belastung, as.numeric(end_month), method = "spearman", use = "complete.obs"))
     )
+
+  return(df_aggregated)
 }
 
-# Call the function with your data frame (buyers_balance_umsatz)
-summarize_transactions(buyers_balance_umsatz)
-```
-
-```{r}
-summarize_transactions_last_three_months <- function(df) {
-  # Convert end_month to Date type
-  df <- df %>% mutate(end_month = ymd(paste0(end_month, "-01")))
-  
-  df %>%
+## With Window
+summarize_transaction_window <- function(data, n_last_months, suffix_name) {
+  df_aggregated <-
+    data %>%
     group_by(account_id.trans) %>%
-    filter(end_month >= max(end_month) - months(2))
-  
-summarize_transactions_last_three_months(buyers_balance_umsatz)
+    mutate(end_month = ymd(paste(end_month, "-01"))) %>%
+    filter(end_month >= max(end_month) - months(n_last_months)) %>%
+    summarize(
+      min_balance = min(balance.trans, na.rm = TRUE),
+      max_balance = max(balance.trans, na.rm = TRUE),
+      mean_balance = mean(balance.trans, na.rm = TRUE),
+      median_balance = median(balance.trans, na.rm = TRUE),
+      sd_balance = sd(balance.trans, na.rm = TRUE),
+      min_gutschrift = min(total_gutschrift, na.rm = TRUE),
+      max_gutschrift = max(total_gutschrift, na.rm = TRUE),
+      mean_gutschrift = mean(total_gutschrift, na.rm = TRUE),
+      median_gutschrift = median(total_gutschrift, na.rm = TRUE),
+      sd_gutschrift = sd(total_gutschrift, na.rm = TRUE),
+      min_belastung = min(total_belastung, na.rm = TRUE),
+      max_belastung = max(total_belastung, na.rm = TRUE),
+      mean_belastung = mean(total_belastung, na.rm = TRUE),
+      median_belastung = median(total_belastung, na.rm = TRUE),
+      sd_belastung = sd(total_belastung, na.rm = TRUE)
+    )
+
+  # add suffix
+  colnames(df_aggregated)[-1] <- paste(colnames(df_aggregated[-1]), suffix_name, sep = "_")
+
+  return(df_aggregated)
+}
+
+
+
+summarize_transactions(buyers_balance_umsatz)
+
+summarize_transaction_window(buyers_balance_umsatz, n_last_months = 2, suffix_name = "last_3_month")
 ```
 
 
-
-
-## 8.2 Statistische Kennzahlen für Vermögen
+## 8.2 Statistische Kennzahlen für Vermögen und Umsätze
 ```{r}
+# Buyers
+statistic_buyers <- summarize_transactions(buyers_balance_umsatz)
 
+statistic_buyers_last_3_month <- summarize_transaction_window(buyers_balance_umsatz, n_last_months = 2, suffix_name = "last_3_month")
+
+statistic_buyers_last_6_month <- summarize_transaction_window(buyers_balance_umsatz, n_last_months = 5, suffix_name = "last_6_month")
+
+statistic_buyers <- inner_join(statistic_buyers, statistic_buyers_last_3_month, by = "account_id.trans") %>% inner_join(statistic_buyers_last_6_month, by = "account_id.trans")
+
+statistic_buyers
+
+
+# Non-Buyers
+statistic_non_buyers <- summarize_transactions(non_buyers_balance_umsatz)
+
+statistic_non_buyers_last_3_month <- summarize_transaction_window(non_buyers_balance_umsatz, n_last_months = 2, suffix_name = "last_3_month")
+
+statistic_non_buyers_last_6_month <- summarize_transaction_window(non_buyers_balance_umsatz, n_last_months = 5, suffix_name = "last_6_month")
+
+statistic_non_buyers <- inner_join(statistic_non_buyers, statistic_non_buyers_last_3_month, by = "account_id.trans") %>% inner_join(statistic_non_buyers_last_6_month, by = "account_id.trans")
+
+statistic_non_buyers
 ```
 
-## 8.3 Statistische Kennzahlen für Umsätze
-```{r}
 
+## 8.3 Export/Import der Aggregationen
+Die Aggregation dauern lange und werden deshalb hier als Parquet File exportiert, um sie gegebenenfalls wieder einzulesen.
+```{r}
+write_parquet(statistic_buyers, "data_export/statistic_buyers.parquet")
+write_parquet(statistic_non_buyers, "data_export/statistic_non_buyers.parquet")
+
+statistic_buyers <- read_parquet("data_export/statistic_buyers.parquet")
+statistic_non_buyers <- read_parquet("data_export/statistic_non_buyers.parquet")
+
+statistic_buyers
+statistic_non_buyers
 ```
 
 ## 9. Kombination von Event Informationen & Kreditkarten Käufer
 Kombinieren event-bezogener Informationen von KreditkartenKäufern und Nicht-Käufern.
 
 ## 9.1 Kombination
-```{r}
+Durch die Kombination aus den dem Dataframe Data und statistic_data erhalten wir ein grosses Dataframe welches 102 Features beinhaltet. 
 
+```{r}
+# concat statistic_buyers with statistic_non_buyers
+statistic_data <- rbind(statistic_buyers, statistic_non_buyers)
+statistic_data <- statistic_data %>% rename("account_id" = "account_id.trans")
+statistic_data
+
+# Imputieren NA values mit 0
+statistic_data[is.na(statistic_data)] <- 0
+
+
+full_data <- inner_join(statistic_data, data, by = "account_id")
+full_data
 ```
 
 # 10. Bereinigung
@@ -2169,14 +2225,117 @@ Bereinigen unnötiger Informationen (z.B. IDs) und Überprüfen der
 Struktur der Modellierungsdaten mittels explorativer Datenanalyse.
 
 ## 10.1 Daten Bereinigen
+
+### 10.1.1 NAN Werte Überprüfen
 ```{r}
+count_na_in_columns <- function(df) {
+    sapply(df, function(x) sum(is.na(x)))
+}
+
+count_na_in_columns(full_data)
+```
+
+### 10.1.2 Spalte droppen
+```{r}
+drop_columns <- function(data, columns_to_drop) {
+  data <- subset(data, select = -c(columns_to_drop))
+  return(data)
+}
+
+full_data <- full_data %>% select(-c("account_id", "date.loan", "type.card", "type.disp"))
+
+# Grund fuer drop:
+# account_id -> key
+# date.loan -> VIele Na. wird durch andere loan Features ersetzt
+# type.card -> viele Na, wird durch has_card.card ersetzt
+# type.disp -> Ist Immer nur "OWNER" somit kein Informationsgehalt
 
 ```
 
-## 10.2 Daten explorieren
+### 10.1.3 Kategorische Spalten One Hot Encoden
 ```{r}
+one_hot_encode <- function(data, categorical_columns) {
+  # Loop through each categorical column and apply one-hot encoding
+  for (col in categorical_columns) {
+    # Perform one-hot encoding using the model.matrix() function
+    encoded_cols <- model.matrix(~ . - 1, data = data[, col, drop = FALSE])
+    
+    # Add the encoded columns to the original DataFrame
+    data <- cbind(data, encoded_cols)
+    
+    # Remove the original categorical column
+    data <- data[, -which(names(data) == col), drop = FALSE]
+  }
+  
+  return(data)
+}
 
+chr_columns <- full_data %>% select_if(is.character)
+chr_col <- colnames(chr_columns)
+chr_col
+
+full_data <- one_hot_encode(full_data, chr_col)
+
+full_data
 ```
+
+### 10.1.4 Logische Spalten
+```{r}
+convert_logical_columns_to_binary <- function(data, logical_columns) {
+  # Loop through each specified logical column and convert it
+  for (col in logical_columns) {
+    if (col %in% names(data) && is.logical(data[[col]])) {
+      data[[col]] <- as.integer(data[[col]])
+    } else {
+      cat("Warning: Column", col, "is not a valid logical column or doesn't exist.\n")
+    }
+  }
+  
+  return(data)
+}
+
+logical_cols = c("has_card.card", "has_order.order", "has_loan.loan")
+full_data <- convert_logical_columns_to_binary(full_data, logical_cols)
+full_data
+```
+
+### 10.1.5 Target Spalte neu anordnen
+```{r}
+# Reorder Col, Target Col as last Column
+full_data <- full_data %>% relocate(has_card.card, .after = last_col())
+full_data
+```
+
+### 10.1.6 Export Full Data
+```{r}
+write_parquet(full_data, "data_export/full_data.parquet")
+full_data <- read_parquet("data_export/full_data.parquet")
+full_data
+```
+
+
+### 10.1.7 Cache Leeren
+```{r}
+all_objects <- ls()
+remove_objects <- setdiff(all_objects, c("full_data"))
+rm(list = remove_objects)
+print(ls())
+```
+
+## 10.2 Daten Explorieren
+
+```{r fig.height=6}
+# Count the number of has_card.card 
+full_data %>% group_by(has_card.card) %>% summarize(count = n()) %>%  ggplot(aes(x = has_card.card, y = count)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  geom_text(aes(label = count), vjust = -0.3, size = 4) +  # Add count values on top
+  labs(
+    title = "Kartenbesitzer",
+    x = "Besitzt eine Karte",
+    y = "Anzahl"
+  )
+```
+
 
 # 11. Partitionierung
 Partitionieren der Daten in Trainings- und Testdaten.

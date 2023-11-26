@@ -23,9 +23,7 @@ full_data <- read_parquet("data_export/full_data.parquet")
 full_data
 ```
 
-```{r}
-anyNA(full_data)
-```
+
 
 
 # 11. Partitionierung
@@ -129,73 +127,81 @@ Bevor wir mit dem eigentlichen Modelieren starten definieren wir hier Funktionen
 Die Funktion Model Evaluation benoetigt als Input das Model und test_date. Die Funktion macht predictions auf den test_data und iteriert durch unterschiedliche tresholds. Anschliessend berechnet es die Konfusionsmatrix und deren Metriken und gibt als Output ein Dataframe mit den Metriken, welches für die Evaluierung weiter verwendet werden kann. 
 ```{r}
 model_evaluation <- function(model, test_data) {
-  # Compute probabilities
-  proba <- predict(model, test_data, type = "response")
+    # Compute probabilities
+    proba <- predict(model, test_data, type = "response")
 
-  # Initialize dataframe with metrics
-  metriken <- data.frame(
-      threshold = numeric(),
-      accuracy = numeric(),
-      precision = numeric(),
-      recall = numeric(),
-      f1_score = numeric(),
-      f0.5_score = numeric(),
-      f2_score = numeric(),
-      matthews = numeric(),
-      TPR = numeric(), # True Positive Rate
-      FPR = numeric() # False Positive Rate
-  )
+    # Initialize dataframe with metrics
+    metriken <- data.frame(
+        threshold = numeric(),
+        accuracy = numeric(),
+        precision = numeric(),
+        recall = numeric(),
+        f1_score = numeric(),
+        f0.5_score = numeric(),
+        f2_score = numeric(),
+        matthews = numeric(),
+        TPR = numeric(), # True Positive Rate
+        FPR = numeric() # False Positive Rate
+    )
 
-  # Iterate through different threshold values
-  thresholds <- seq(0.1, 0.9, by = 0.1)
+    # Iterate through different threshold values
+    thresholds <- seq(0, 1, by = 0.1)
 
-  for (threshold in thresholds) {
-      predicted_classes <- ifelse(proba >= threshold, TRUE, FALSE)
+    for (threshold in thresholds) {
+        predicted_classes <- ifelse(proba >= threshold, TRUE, FALSE)
 
-      conf_matrix <- table(
-          Predicted = as.factor(predicted_classes),
-          Actual = as.factor(test_data$has_card.card)
-      )
+        conf_matrix <- table(
+            Predicted = as.factor(predicted_classes),
+            Actual = as.factor(test_data$has_card.card)
+        )
+        # Initialize variables with default values
+        tn <- 0
+        tp <- 0
+        fn <- 0
+        fp <- 0
+        
+      # Check if the confusion matrix has the necessary dimensions
+      if (nrow(conf_matrix) >= 2 && ncol(conf_matrix) >= 2) {
+        tn <- conf_matrix[1, 1]
+        tp <- conf_matrix[2, 2]
+        fn <- conf_matrix[1, 2]
+        fp <- conf_matrix[2, 1]
+      }
 
-      tn <- conf_matrix[1, 1]
-      tp <- conf_matrix[2, 2]
-      fn <- conf_matrix[1, 2]
-      fp <- conf_matrix[2, 1]
+        # Calculate accuracy
+        accuracy <- (tp + tn) / (tn + tp + fn + fp)
+        # Calculate precision
+        precision <- tp / (tp + fp)
+        # Calculate recall
+        recall <- tp / (tp + fn)
+        # Calculate f1 score
+        f1_score <- 2 * precision * recall / (precision + recall)
+        # Calculate f0.5 score
+        f0.5_score <- (1 + 0.5^2) * precision * recall / ((0.5^2 * precision) + recall)
+        # Calculate f2 score
+        f2_score <- (1 + 2^2) * precision * recall / ((2^2 * precision) + recall)
+        # Calculate Matthews correlation coefficient
+        matthews <- (tp * tn - fp * fn) /
+            sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
 
-      # Calculate accuracy
-      accuracy <- (tp + tn) / (tn + tp + fn + fp)
-      # Calculate precision
-      precision <- tp / (tp + fp)
-      # Calculate recall
-      recall <- tp / (tp + fn)
-      # Calculate f1 score
-      f1_score <- 2 * precision * recall / (precision + recall)
-      # Calculate f0.5 score
-      f0.5_score <- (1 + 0.5^2) * precision * recall / ((0.5^2 * precision) + recall)
-      # Calculate f2 score
-      f2_score <- (1 + 2^2) * precision * recall / ((2^2 * precision) + recall)
-      # Calculate Matthews correlation coefficient
-      matthews <- (tp * tn - fp * fn) /
-          sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+        # Calculate true positive rate and false positive rate
+        TPR <- tp / (tp + fn)
+        FPR <- fp / (fp + tn)
 
-      # Calculate true positive rate and false positive rate
-      TPR <- tp / (tp + fn)
-      FPR <- fp / (fp + tn)
-
-      # Append metrics to the metrics dataframe
-      metriken <- rbind(metriken, data.frame(
-          threshold = threshold,
-          accuracy = accuracy,
-          precision = precision,
-          recall = recall,
-          f1_score = f1_score,
-          f0.5_score = f0.5_score,
-          f2_score = f2_score,
-          matthews = matthews,
-          TPR = TPR,
-          FPR = FPR
-      ))
-  }
+        # Append metrics to the metrics dataframe
+        metriken <- rbind(metriken, data.frame(
+            threshold = threshold,
+            accuracy = accuracy,
+            precision = precision,
+            recall = recall,
+            f1_score = f1_score,
+            f0.5_score = f0.5_score,
+            f2_score = f2_score,
+            matthews = matthews,
+            TPR = TPR,
+            FPR = FPR
+        ))
+    }
     evaluation_df <- metriken
     return(evaluation_df)
 }
@@ -226,33 +232,92 @@ den Informationen “Alter”, “Geschlecht”, “Domizilregion”,
 “Vermögen” und “Umsatz” vor Kreditkartenkauf. 
 
 ```{r}
-#
-train_data %>% select(has_card.card, age.client, gender.client, region.district, mean_balance, mean_gutschrift, mean_belastung)
-# order 
-%>% arrange(has_card.card)
-
+val_data %>%
+    select(has_card.card, age.client, gender.client, region.district, mean_balance, mean_gutschrift, mean_belastung) %>%
+    arrange(has_card.card)
 ```
 
 ```{r}
 base_line_model <- glm(has_card.card ~ age.client + gender.client + region.district + mean_balance + mean_gutschrift + mean_belastung, data = train_data, family = binomial)
 
-baseline_evaluation <- model_evaluation(base_line_model, test_data)
+baseline_evaluation <- model_evaluation(base_line_model, val_data)
 baseline_evaluation
-# plot ROC curve with input metriken
-plot_roc_curve <- function(evaluation_df) {
-    ggplot(evaluation_df, aes(x = FPR, y = TPR)) +
-        coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
-        geom_line() +
-        geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
-        labs(
-            title = "ROC Curve",
-            subtitle = "Receiver Operating Characteristic Curve",
-            x = "False Positive Rate",
-            y = "True Positive Rate"
-        )
-}
+
 plot_roc_curve(baseline_evaluation)
 ```
+
+## 13.3 Cross-Validierung k-fold = 10
+Weil ich die Aufgabe nicht gelesen habe, dass wir Crossvalidieren sollten, mache ich auf den rest_data eine cross-validierung.
+```{r}
+create_kfold <- function(rest_data, num_folds = 10, strata_col = has_card.card) {
+  set.seed(19981218)
+  # Create cross-validation folds
+  cross_val_folds <- vfold_cv(rest_data, v = num_folds, strata = has_card.card)
+  
+  # Initialize a list to store the training and validation datasets
+  fold_datasets <- list()
+  
+  # Loop through each fold
+  for (i in 1:nrow(cross_val_folds)) {
+    # Select the current training and validation datasets
+    train_data <- cross_val_folds$splits[[i]] %>% analysis()
+    val_data <- cross_val_folds$splits[[i]] %>% assessment()
+    
+    # Store the datasets in a list
+    fold_datasets[[i]] <- list(train_data = train_data, val_data = val_data)
+  }
+  
+  # Return the list of fold datasets
+  return(fold_datasets)
+}
+
+# auf den restlichen Daten k-folds erstellen
+kfolds_data <- create_kfold(rest_data)
+
+
+
+```
+
+## 10.4 Baseline Model mit k-fold=10
+```{r}
+
+models <- list()
+models_eval <- list()
+
+for (i in 1:length(kfolds_data)) {
+    # Get the training and validation datasets for the current fold
+    train_data <- kfolds_data[[i]]$train_data
+    val_data <- kfolds_data[[i]]$val_data
+    
+    # Fit the logistic regression model for the current fold
+    base_line_model <- glm(has_card.card ~ age.client +
+                             gender.client + region.district +
+                             mean_balance + mean_gutschrift +
+                             mean_belastung, data = train_data,
+                           family = binomial)
+    
+    # Store the model in the list
+    models[[i]] <- base_line_model
+    
+    # perform evaluation with model_evlaution function
+    models_eval[[i]] <- model_evaluation(base_line_model, val_data) 
+    models_eval[[i]]$baseline_model_nr = i
+    
+}
+```
+
+## 10.5 Plot 10 Roc Cruve
+```{r}
+all_baseline_results <- do.call(rbind, models_eval)
+all_baseline_results 
+
+all_baseline_results %>% ggplot(aes(x = FPR, y = TPR, color = as.factor(baseline_model_nr))) + geom_line()
+
+
+```
+
+
+
 
 
 # 13. Verbesserung des Baseline Modell

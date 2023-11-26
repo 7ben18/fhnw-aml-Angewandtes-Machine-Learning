@@ -2382,9 +2382,9 @@ test_data <- full_data %>%
 test_data
 
 # remove test data from full data
-full_data <- full_data %>%
+rest_data <- full_data %>%
     anti_join(test_data, by = "account_id")
-full_data
+rest_data
 ```
 
 ## 11.2 Train-, Validierungsdaten
@@ -2395,7 +2395,7 @@ anti_join()
 ```{r}
 # Split the remaining data into train 80 % and validation data 20% make sure there are no data leakage between the three datasets
 set.seed(123)
-train_data <- full_data %>%
+train_data <- rest_data %>%
     group_by(has_card.card) %>%
     sample_frac(0.8) %>%
     ungroup()
@@ -2403,7 +2403,7 @@ train_data <- full_data %>%
 train_data
 
 # remove train data from full data
-val_data <- full_data %>%
+val_data <- rest_data %>%
     anti_join(train_data, by = "account_id")
 val_data
 ```
@@ -2421,6 +2421,8 @@ ratio <- function(data, column) {
         mutate(ratio = n / sum(n))
 }
 
+
+ratio(rest_data)
 ratio(test_data, has_card.card)
 ratio(train_data, has_card.card)
 ratio(val_data, has_card.card)
@@ -2440,6 +2442,9 @@ check_data_leakage(train_data, test_data, "account_id")
 # check for data leakage between validation and test data
 check_data_leakage(val_data, test_data, "account_id")
 
+# check for data leakage between test and rest_data
+check_data_leakage(test_data, rest_data, "account_id")
+
 ```
 
 
@@ -2449,74 +2454,82 @@ Bevor wir mit dem eigentlichen Modelieren starten definieren wir hier Funktionen
 ## 12.1 Model Evaluation
 Die Funktion Model Evaluation benoetigt als Input das Model und test_date. Die Funktion macht predictions auf den test_data und iteriert durch unterschiedliche tresholds. Anschliessend berechnet es die Konfusionsmatrix und deren Metriken und gibt als Output ein Dataframe mit den Metriken, welches für die Evaluierung weiter verwendet werden kann. 
 ```{r}
-model_evaluation <- function(model, test_data) {
-  # Compute probabilities
-  proba <- predict(model, test_data, type = "response")
+model_evaluation <- function(model, val_data) {
+    # Compute probabilities
+    proba <- predict(model, val_data, type = "response")
 
-  # Initialize dataframe with metrics
-  metriken <- data.frame(
-      threshold = numeric(),
-      accuracy = numeric(),
-      precision = numeric(),
-      recall = numeric(),
-      f1_score = numeric(),
-      f0.5_score = numeric(),
-      f2_score = numeric(),
-      matthews = numeric(),
-      TPR = numeric(), # True Positive Rate
-      FPR = numeric() # False Positive Rate
-  )
+    # Initialize dataframe with metrics
+    metriken <- data.frame(
+        threshold = numeric(),
+        accuracy = numeric(),
+        precision = numeric(),
+        recall = numeric(),
+        f1_score = numeric(),
+        f0.5_score = numeric(),
+        f2_score = numeric(),
+        matthews = numeric(),
+        TPR = numeric(), # True Positive Rate
+        FPR = numeric() # False Positive Rate
+    )
 
-  # Iterate through different threshold values
-  thresholds <- seq(0.1, 0.9, by = 0.1)
+    # Iterate through different threshold values
+    thresholds <- seq(0, 1, by = 0.1)
 
-  for (threshold in thresholds) {
-      predicted_classes <- ifelse(proba >= threshold, TRUE, FALSE)
+    for (threshold in thresholds) {
+        predicted_classes <- ifelse(proba >= threshold, TRUE, FALSE)
 
-      conf_matrix <- table(
-          Predicted = as.factor(predicted_classes),
-          Actual = as.factor(test_data$has_card.card)
-      )
+        conf_matrix <- table(
+            Predicted = as.factor(predicted_classes),
+            Actual = as.factor(val_data$has_card.card)
+        )
+        # Initialize variables with default values
+        tn <- 0
+        tp <- 0
+        fn <- 0
+        fp <- 0
+        
+      # Check if the confusion matrix has the necessary dimensions
+      if (nrow(conf_matrix) >= 2 && ncol(conf_matrix) >= 2) {
+        tn <- conf_matrix[1, 1]
+        tp <- conf_matrix[2, 2]
+        fn <- conf_matrix[1, 2]
+        fp <- conf_matrix[2, 1]
+      }
 
-      tn <- conf_matrix[1, 1]
-      tp <- conf_matrix[2, 2]
-      fn <- conf_matrix[1, 2]
-      fp <- conf_matrix[2, 1]
+        # Calculate accuracy
+        accuracy <- (tp + tn) / (tn + tp + fn + fp)
+        # Calculate precision
+        precision <- tp / (tp + fp)
+        # Calculate recall
+        recall <- tp / (tp + fn)
+        # Calculate f1 score
+        f1_score <- 2 * precision * recall / (precision + recall)
+        # Calculate f0.5 score
+        f0.5_score <- (1 + 0.5^2) * precision * recall / ((0.5^2 * precision) + recall)
+        # Calculate f2 score
+        f2_score <- (1 + 2^2) * precision * recall / ((2^2 * precision) + recall)
+        # Calculate Matthews correlation coefficient
+        matthews <- (tp * tn - fp * fn) /
+            sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
 
-      # Calculate accuracy
-      accuracy <- (tp + tn) / (tn + tp + fn + fp)
-      # Calculate precision
-      precision <- tp / (tp + fp)
-      # Calculate recall
-      recall <- tp / (tp + fn)
-      # Calculate f1 score
-      f1_score <- 2 * precision * recall / (precision + recall)
-      # Calculate f0.5 score
-      f0.5_score <- (1 + 0.5^2) * precision * recall / ((0.5^2 * precision) + recall)
-      # Calculate f2 score
-      f2_score <- (1 + 2^2) * precision * recall / ((2^2 * precision) + recall)
-      # Calculate Matthews correlation coefficient
-      matthews <- (tp * tn - fp * fn) /
-          sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+        # Calculate true positive rate and false positive rate
+        TPR <- tp / (tp + fn)
+        FPR <- fp / (fp + tn)
 
-      # Calculate true positive rate and false positive rate
-      TPR <- tp / (tp + fn)
-      FPR <- fp / (fp + tn)
-
-      # Append metrics to the metrics dataframe
-      metriken <- rbind(metriken, data.frame(
-          threshold = threshold,
-          accuracy = accuracy,
-          precision = precision,
-          recall = recall,
-          f1_score = f1_score,
-          f0.5_score = f0.5_score,
-          f2_score = f2_score,
-          matthews = matthews,
-          TPR = TPR,
-          FPR = FPR
-      ))
-  }
+        # Append metrics to the metrics dataframe
+        metriken <- rbind(metriken, data.frame(
+            threshold = threshold,
+            accuracy = accuracy,
+            precision = precision,
+            recall = recall,
+            f1_score = f1_score,
+            f0.5_score = f0.5_score,
+            f2_score = f2_score,
+            matthews = matthews,
+            TPR = TPR,
+            FPR = FPR
+        ))
+    }
     evaluation_df <- metriken
     return(evaluation_df)
 }
@@ -2547,7 +2560,7 @@ den Informationen “Alter”, “Geschlecht”, “Domizilregion”,
 
 ## 13.1 Baseline Daten
 ```{r}
-train_data %>% select(has_card.card, age.client, gender.client, region.district, mean_balance, mean_gutschrift, mean_belastung) %>% arrange(desc(has_card.card))
+val_data %>% select(has_card.card, age.client, gender.client, region.district, mean_balance, mean_gutschrift, mean_belastung) %>% arrange(desc(has_card.card))
 ```
 
 ## 13.1 Baseline Modell erstellen
@@ -2557,21 +2570,188 @@ base_line_model <- glm(has_card.card ~ age.client + gender.client + region.distr
 
 ## 13.2 Baseline Modell evaluieren
 ```{r}
-baseline_evaluation <- model_evaluation(base_line_model, test_data)
+baseline_evaluation <- model_evaluation(base_line_model, val_data)
 baseline_evaluation
 
 plot_roc_curve(baseline_evaluation)
 ```
 
-# 13. Verbesserung des Baseline Modell
+## 13.3 Cross-Validierung k-fold = 10
+Weil ich die Aufgabe nicht gelesen habe, dass wir Crossvalidieren sollten, mache ich auf den `rest_data` eine cross-validierung.
+
+Die Funktion `create_kfold` erlaubt es mir eine definierte anzahl an folds den `rest_data` in gleichmässige Verhältnisse mittels `strata_col` zu splitten. Als Output erhalte ich eine Liste, indem jeweils der train durch und valdierungsdatensatz ist für jeden Fold. Die Daten die ich kriege werden für alle Modelle genutzt, damit die Reproduzierbarkeit sowie die Vergleichbarkeit gewährleistet ist.
+```{r}
+create_kfold <- function(rest_data, num_folds = 10, strata_col = has_card.card) {
+  set.seed(19981218)
+  # Create cross-validation folds
+  cross_val_folds <- vfold_cv(rest_data, v = num_folds, strata = has_card.card)
+  
+  # Initialize a list to store the training and validation datasets
+  fold_datasets <- list()
+  
+  # Loop through each fold
+  for (i in 1:nrow(cross_val_folds)) {
+    # Select the current training and validation datasets
+    train_data <- cross_val_folds$splits[[i]] %>% analysis()
+    val_data <- cross_val_folds$splits[[i]] %>% assessment()
+    
+    # Store the datasets in a list
+    fold_datasets[[i]] <- list(train_data = train_data, val_data = val_data)
+  }
+  
+  # Return the list of fold datasets
+  return(fold_datasets)
+}
+
+# auf den restlichen Daten k-folds erstellen
+kfolds_data <- create_kfold(rest_data)
+
+
+```
+
+## 13.4 Baseline Model mit k-fold=10
+Hier in diesem Abschnitt erstelle ich aus den kfolds Daten das Baseline Modell und werte diese anschliessend mit der `model_evaluation` Funktion aus die im Abschnitt 12.1 erstellt wurde. 
+```{r}
+models <- list()
+models_eval <- list()
+
+for (i in 1:length(kfolds_data)) {
+    # Get the training and validation datasets for the current fold
+    train_data <- kfolds_data[[i]]$train_data
+    val_data <- kfolds_data[[i]]$val_data
+    
+    # Fit the logistic regression model for the current fold
+    base_line_model <- glm(has_card.card ~ age.client +
+                             gender.client + region.district +
+                             mean_balance + mean_gutschrift +
+                             mean_belastung, data = train_data,
+                           family = binomial)
+    
+    # Store the model in the list
+    models[[i]] <- base_line_model
+    
+    # perform evaluation with model_evlaution function
+    models_eval[[i]] <- model_evaluation(base_line_model, val_data) 
+    models_eval[[i]]$baseline_model_nr = i
+    
+}
+```
+
+## 13.5 Plot 10 Baseline Roc Cruve
+Nun füge ich alle Ausgewerteten Baseline Modelle zusammen zu einem grossen Dataframe und kann den Datensatz später weiter gebrauchen für weitere Auswertungen. Vorweg Plotte ich die ROC Kurve und berechne für jeden Threshold den Mittelwert der Metriken sowie die Standardabweichung dazu. 
+```{r}
+all_baseline_results <- do.call(rbind, models_eval)
+
+all_baseline_results %>% ggplot(aes(x = FPR, y = TPR, color = as.factor(baseline_model_nr))) + 
+  geom_line() +
+        coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
+        geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+        labs(
+            title = "ROC Curve",
+            subtitle = "Receiver Operating Characteristic Curve",
+            x = "False Positive Rate",
+            y = "True Positive Rate"
+        ) + 
+  scale_color_discrete(name = "Kfold Baseline Models")
+
+all_baseline_results %>%  group_by(threshold) %>%
+  summarize(
+    threshold = first(threshold),
+    mean_accuracy = mean(accuracy, na.rm = TRUE),
+    sd_accuracy = sd(accuracy, na.rm = TRUE),
+    mean_precision = mean(precision, na.rm = TRUE),
+    sd_precision = sd(precision, na.rm = TRUE),
+    mean_recall = mean(recall, na.rm = TRUE),
+    sd_recall = sd(recall, na.rm = TRUE),
+    mean_f1_score = mean(f1_score, na.rm = TRUE),
+    sd_f1_score = sd(f1_score, na.rm = TRUE),
+    mean_f0.5_score = mean(f0.5_score, na.rm = TRUE),
+    sd_f0.5_score = sd(f0.5_score, na.rm = TRUE),
+    mean_f2_score = mean(f2_score, na.rm = TRUE),
+    sd_f2_score = sd(f2_score, na.rm = TRUE),
+    mean_matthews = mean(matthews, na.rm = TRUE),
+    sd_matthews = sd(matthews, na.rm = TRUE),
+    mean_TPR = mean(TPR, na.rm = TRUE),
+    sd_TPR = sd(TPR, na.rm = TRUE),
+    mean_FPR = mean(FPR, na.rm = TRUE),
+    sd_FPR = sd(FPR, na.rm = TRUE)
+  )
+
+```
+
+# 14. Verbesserung des Baseline Modell
 Systematisches Explorieren von Verbesserungsmöglichkeiten des 
 Baseline Modelles durch Erweiterung erklärender Variablen, 
 Verwendung anderer Algorithmen und Optimierung.
+`
+
+
 
 ## 14.1 Erweiterung 
 ```{r}
+models <- list()
+models_eval <- list()
+
+for (i in 1:length(kfolds_data)) {
+    # Get the training and validation datasets for the current fold
+    train_data <- kfolds_data[[i]]$train_data
+    val_data <- kfolds_data[[i]]$val_data
+    
+    # Fit the logistic regression model for the current fold
+    full_linear_model <- glm(has_card.card ~ ., data = train_data,
+                           family = binomial)
+    
+    # Store the model in the list
+    models[[i]] <- full_linear_model
+    
+    # perform evaluation with model_evlaution function
+    models_eval[[i]] <- model_evaluation(full_linear_model, val_data) 
+    models_eval[[i]]$full_linear_model_nr = i
+    
+}
+```
+
+```{r}
+full_linear_model_results <- do.call(rbind, models_eval)
+
+full_linear_model_results %>% ggplot(aes(x = FPR, y = TPR, color = as.factor(full_linear_model_nr))) + 
+  geom_line() +
+        coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
+        geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+        labs(
+            title = "ROC Curve",
+            subtitle = "Receiver Operating Characteristic Curve",
+            x = "False Positive Rate",
+            y = "True Positive Rate"
+        ) + 
+  scale_color_discrete(name = "Kfold Full Linear Models")
+
+full_linear_model_results %>%  group_by(threshold) %>%
+  summarize(
+    threshold = first(threshold),
+    mean_accuracy = mean(accuracy, na.rm = TRUE),
+    sd_accuracy = sd(accuracy, na.rm = TRUE),
+    mean_precision = mean(precision, na.rm = TRUE),
+    sd_precision = sd(precision, na.rm = TRUE),
+    mean_recall = mean(recall, na.rm = TRUE),
+    sd_recall = sd(recall, na.rm = TRUE),
+    mean_f1_score = mean(f1_score, na.rm = TRUE),
+    sd_f1_score = sd(f1_score, na.rm = TRUE),
+    mean_f0.5_score = mean(f0.5_score, na.rm = TRUE),
+    sd_f0.5_score = sd(f0.5_score, na.rm = TRUE),
+    mean_f2_score = mean(f2_score, na.rm = TRUE),
+    sd_f2_score = sd(f2_score, na.rm = TRUE),
+    mean_matthews = mean(matthews, na.rm = TRUE),
+    sd_matthews = sd(matthews, na.rm = TRUE),
+    mean_TPR = mean(TPR, na.rm = TRUE),
+    sd_TPR = sd(TPR, na.rm = TRUE),
+    mean_FPR = mean(FPR, na.rm = TRUE),
+    sd_FPR = sd(FPR, na.rm = TRUE)
+  )
 
 ```
+
+
 
 ## 14.2 Andere Algorithmen 
 ```{r}

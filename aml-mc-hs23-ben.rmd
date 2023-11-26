@@ -2242,7 +2242,7 @@ drop_columns <- function(data, columns_to_drop) {
   return(data)
 }
 
-full_data <- full_data %>% select(-c("account_id", "date.loan", "type.card", "type.disp"))
+full_data <- full_data %>% select(-c("date.loan", "type.card", "type.disp"))
 
 # Grund fuer drop:
 # account_id -> key
@@ -2274,9 +2274,9 @@ chr_columns <- full_data %>% select_if(is.character)
 chr_col <- colnames(chr_columns)
 chr_col
 
-full_data <- one_hot_encode(full_data, chr_col)
+full_data_onehot <- one_hot_encode(full_data, chr_col)
 
-full_data
+full_data_onehot
 ```
 
 ### 10.1.4 Logische Spalten
@@ -2295,19 +2295,26 @@ convert_logical_columns_to_binary <- function(data, logical_columns) {
 }
 
 logical_cols = c("has_card.card", "has_order.order", "has_loan.loan")
-full_data <- convert_logical_columns_to_binary(full_data, logical_cols)
-full_data
+full_data_onehot <- convert_logical_columns_to_binary(full_data_onehot, logical_cols)
+full_data_onehot
 ```
 
 ### 10.1.5 Target Spalte neu anordnen
 ```{r}
 # Reorder Col, Target Col as last Column
+full_data_onehot <- full_data_onehot %>% relocate(has_card.card, .after = last_col())
+full_data_onehot
+
 full_data <- full_data %>% relocate(has_card.card, .after = last_col())
 full_data
 ```
 
 ### 10.1.6 Export Full Data
 ```{r}
+write_parquet(full_data_onehot, "data_export/full_data_onehot.parquet")
+full_data_onehot <- read_parquet("data_export/full_data_onehot.parquet")
+full_data_onehot
+
 write_parquet(full_data, "data_export/full_data.parquet")
 full_data <- read_parquet("data_export/full_data.parquet")
 full_data
@@ -2324,6 +2331,9 @@ print(ls())
 
 ## 10.2 Daten Explorieren
 
+### 10.2.1 Anzahl Kreditkartenbesitzer
+Anzahl Kreditkarten-Käufer und Nicht-Käufer mit kompletter 12 
+Monate-Rollup Information (Barplot).
 ```{r fig.height=6}
 # Count the number of has_card.card 
 full_data %>% group_by(has_card.card) %>% summarize(count = n()) %>%  ggplot(aes(x = has_card.card, y = count)) +
@@ -2336,23 +2346,221 @@ full_data %>% group_by(has_card.card) %>% summarize(count = n()) %>%  ggplot(aes
   )
 ```
 
-
-# 11. Partitionierung
-Partitionieren der Daten in Trainings- und Testdaten.
-
-## 11.1 Train-Test Split
+### 10.2.2 Verteilung der Kaufzeitpunkte
+Verteilung der Kaufzeitpunkte der Kreditkarten-Käufer bzw. Vergleichszeitpunkte der Nicht-Käufer (Densityplot).
 ```{r}
+full_data %>% 
+  select(issued.card, has_card.card) %>% 
+  ggplot(aes(x = issued.card, fill = factor(has_card.card))) +
+  geom_density(alpha = 0.25) + 
+  labs(
+    title = "Density Plot of Issued Cards",
+    subtitle = "Grouped by has_card.card",
+    x = "Dates",
+    y = "Density"
+  ) + 
+  scale_color_manual(values = c("1" = "blue", "0" = "red"), name = "has_card")
 
 ```
 
-# 12. Baseline Modell
+
+# 11. Partitionierung
+Partitionieren der Daten in Trainings-, Validierungs- und Testdaten.
+Wir trennen die Daten gleichmässig aufgrund der Spalte has_card.card damit wir das gleiche Verhältnis von Kartenbesitzer und Nicht Kartenbesitzer im Trainings-, Validierungs-, und Testdaten haben.
+
+## 11.1 Test Daten 10%
+Wir entfernen 10% unserer Daten für den Testdatensatz und Exportieren diese als Parquet File. 
+
+```{r}
+# sample 10% of the data but keep the same ratio of has_card.card add seed for reproducibility
+set.seed(123)
+test_data <- full_data %>%
+    group_by(has_card.card) %>%
+    sample_frac(0.1) %>%
+    ungroup()
+
+test_data
+
+# remove test data from full data
+full_data <- full_data %>%
+    anti_join(test_data, by = "account_id")
+full_data
+```
+
+## 11.2 Train-, Validierungsdaten
+Nun nehmen wir den restlichen Datensatz und trennen diese in Trainings und Validierungsdatensatz auf. Dabei nehmen wir ein Verhältnis von 80% Trainingsdaten und 20% Validierungsdaten, auf den restlichen Datensatz gerechnet. (Der Testdatensatz wird abgespeichert und in einem späteren Kapitel verwendet für die Model Performance auf unvorhergesehene Daten)
+
+anti_join()
+- anti_join() return all rows from x without a match in y.
+```{r}
+# Split the remaining data into train 80 % and validation data 20% make sure there are no data leakage between the three datasets
+set.seed(123)
+train_data <- full_data %>%
+    group_by(has_card.card) %>%
+    sample_frac(0.8) %>%
+    ungroup()
+
+train_data
+
+# remove train data from full data
+val_data <- full_data %>%
+    anti_join(train_data, by = "account_id")
+val_data
+```
+
+## 11.3 Data Leakage und Ratio Test Test
+Data Leakage wird getestet durch semi_join()
+- semi_join() return all rows from x with a match in y.
+```{r}
+# check if there is any data leakage by account_id between the three datasets
+
+ratio <- function(data, column) {
+    data %>%
+        group_by({{ column }}) %>%
+        summarise(n = n()) %>%
+        mutate(ratio = n / sum(n))
+}
+
+ratio(test_data, has_card.card)
+ratio(train_data, has_card.card)
+ratio(val_data, has_card.card)
+
+# create a function to check for data leakage
+check_data_leakage <- function(data1, data2, column) {
+    data1 %>%
+        semi_join(data2, by = {{ column }}) %>% nrow()
+}
+
+# check for data leakage between train and validation data
+check_data_leakage(train_data, val_data, "account_id")
+
+# check for data leakage between train and test data
+check_data_leakage(train_data, test_data, "account_id")
+
+# check for data leakage between validation and test data
+check_data_leakage(val_data, test_data, "account_id")
+
+```
+
+
+# 12. Setup
+Bevor wir mit dem eigentlichen Modelieren starten definieren wir hier Funktionen die uns später unterstützen beim Evaluaieren. 
+
+## 12.1 Model Evaluation
+Die Funktion Model Evaluation benoetigt als Input das Model und test_date. Die Funktion macht predictions auf den test_data und iteriert durch unterschiedliche tresholds. Anschliessend berechnet es die Konfusionsmatrix und deren Metriken und gibt als Output ein Dataframe mit den Metriken, welches für die Evaluierung weiter verwendet werden kann. 
+```{r}
+model_evaluation <- function(model, test_data) {
+  # Compute probabilities
+  proba <- predict(model, test_data, type = "response")
+
+  # Initialize dataframe with metrics
+  metriken <- data.frame(
+      threshold = numeric(),
+      accuracy = numeric(),
+      precision = numeric(),
+      recall = numeric(),
+      f1_score = numeric(),
+      f0.5_score = numeric(),
+      f2_score = numeric(),
+      matthews = numeric(),
+      TPR = numeric(), # True Positive Rate
+      FPR = numeric() # False Positive Rate
+  )
+
+  # Iterate through different threshold values
+  thresholds <- seq(0.1, 0.9, by = 0.1)
+
+  for (threshold in thresholds) {
+      predicted_classes <- ifelse(proba >= threshold, TRUE, FALSE)
+
+      conf_matrix <- table(
+          Predicted = as.factor(predicted_classes),
+          Actual = as.factor(test_data$has_card.card)
+      )
+
+      tn <- conf_matrix[1, 1]
+      tp <- conf_matrix[2, 2]
+      fn <- conf_matrix[1, 2]
+      fp <- conf_matrix[2, 1]
+
+      # Calculate accuracy
+      accuracy <- (tp + tn) / (tn + tp + fn + fp)
+      # Calculate precision
+      precision <- tp / (tp + fp)
+      # Calculate recall
+      recall <- tp / (tp + fn)
+      # Calculate f1 score
+      f1_score <- 2 * precision * recall / (precision + recall)
+      # Calculate f0.5 score
+      f0.5_score <- (1 + 0.5^2) * precision * recall / ((0.5^2 * precision) + recall)
+      # Calculate f2 score
+      f2_score <- (1 + 2^2) * precision * recall / ((2^2 * precision) + recall)
+      # Calculate Matthews correlation coefficient
+      matthews <- (tp * tn - fp * fn) /
+          sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+
+      # Calculate true positive rate and false positive rate
+      TPR <- tp / (tp + fn)
+      FPR <- fp / (fp + tn)
+
+      # Append metrics to the metrics dataframe
+      metriken <- rbind(metriken, data.frame(
+          threshold = threshold,
+          accuracy = accuracy,
+          precision = precision,
+          recall = recall,
+          f1_score = f1_score,
+          f0.5_score = f0.5_score,
+          f2_score = f2_score,
+          matthews = matthews,
+          TPR = TPR,
+          FPR = FPR
+      ))
+  }
+    evaluation_df <- metriken
+    return(evaluation_df)
+}
+```
+
+## 12.2 ROC Kurve 
+Die plot_roc_curve nimmt als Input Parameter die evualtion_df, welches von der Funktion model_evaluation entsteht und visualisiert die ROC Kurve. 
+```{r}
+# plot ROC curve with input metriken
+plot_roc_curve <- function(evaluation_df) {
+    ggplot(evaluation_df, aes(x = FPR, y = TPR)) +
+        geom_line() +
+        coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
+        geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+        labs(
+            title = "ROC Curve",
+            subtitle = "Receiver Operating Characteristic Curve",
+            x = "False Positive Rate",
+            y = "True Positive Rate"
+        )
+}
+```
+
+# 13. Baseline Modell
 Erstellen eines Baseline Modelles mittels logistischer Regression und 
 den Informationen “Alter”, “Geschlecht”, “Domizilregion”, 
 “Vermögen” und “Umsatz” vor Kreditkartenkauf. 
 
-## 12.1 Logistische Regression
+## 13.1 Baseline Daten
 ```{r}
+train_data %>% select(has_card.card, age.client, gender.client, region.district, mean_balance, mean_gutschrift, mean_belastung) %>% arrange(desc(has_card.card))
+```
 
+## 13.1 Baseline Modell erstellen
+```{r}
+base_line_model <- glm(has_card.card ~ age.client + gender.client + region.district + mean_balance + mean_gutschrift + mean_belastung, data = train_data, family = binomial)
+```
+
+## 13.2 Baseline Modell evaluieren
+```{r}
+baseline_evaluation <- model_evaluation(base_line_model, test_data)
+baseline_evaluation
+
+plot_roc_curve(baseline_evaluation)
 ```
 
 # 13. Verbesserung des Baseline Modell
@@ -2360,51 +2568,51 @@ Systematisches Explorieren von Verbesserungsmöglichkeiten des
 Baseline Modelles durch Erweiterung erklärender Variablen, 
 Verwendung anderer Algorithmen und Optimierung.
 
-## 13.1 Erweiterung 
+## 14.1 Erweiterung 
 ```{r}
 
 ```
 
-## 13.2 Andere Algorithmen 
+## 14.2 Andere Algorithmen 
 ```{r}
 
 ```
 
-## 13.3 Andere Optimierungen
+## 14.3 Andere Optimierungen
 ```{r}
 
 ```
 
-# 14. Vergleich der Modelle
+# 15. Vergleich der Modelle
 Vergleichen der Kandidatenmodelle und identifizieren des bzgl. 
 Performance “besten” Modelles mit ROC, AUC und Precision.
 
-## 14.1 Modell Vergleich
+## 15.1 Modell Vergleich
 ```{r}
 
 ```
 
 
-# 15. Top-N Kunden 
+# 16. Top-N Kunden 
  Quantitatives Untersuchen der Unterschiede von Top-N Kunden Listen verschiedener Modelle
  
-## 15.1 Top-N Kunden Vergleich von Modellen
+## 16.1 Top-N Kunden Vergleich von Modellen
 ```{r}
 
 ```
 
  
-# 16. Wichtigkeit und Balancierung
+# 17. Wichtigkeit und Balancierung
 Untersuchen der globalen Wichtigkeit der Einflussfaktoren des 
 “besten” Modelles und Reduzieren des “besten” Modelles mittels 
 Balancieren von globaler Wichtigkeit und Modellperformance.
 
-## 16.1 Wichtigkeit
+## 17.1 Wichtigkeit
 ```{r}
 
 ```
 
-## 16.2 Balancierung 
+## 17.2 Balancierung 
 ```{r}
 
 ```

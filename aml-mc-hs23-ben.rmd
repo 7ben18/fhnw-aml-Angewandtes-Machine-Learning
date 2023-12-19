@@ -29,6 +29,7 @@ library(arrow)
 library(caret)
 library(pROC)
 library(ranger)
+library(e1071)
 ```
 
 
@@ -2692,8 +2693,8 @@ baseline_test_data
 set.seed(123)
 num_folds <- 10
 
-data_partition_base <- createFolds(baseline_train_data$has_card.card, k = num_folds)
-data_partition_full <- createFolds(rest_data$has_card.card, k = num_folds)
+data_partition <- createFolds(baseline_train_data$has_card.card, k = num_folds)
+data_partition <- createFolds(rest_data$has_card.card, k = num_folds)
 
 ```
 
@@ -2702,9 +2703,15 @@ data_partition_full <- createFolds(rest_data$has_card.card, k = num_folds)
 Die Funktion `train_and_evaluate_lr` ist ein glm Model, welches eine Binäre Klassifkation durchführt mit der Zielvariable `has_card.card`. Diese Baseline Funktion dient als Grundlage für weitere Model Funktionen, welche später hinzukommen.
 
 ```{r}
-train_and_evaluate_lr <- function(train_index) {
-  train_data <- baseline_train_data[-train_index, ]
-  validation_data <- baseline_train_data[train_index, ]
+train_and_evaluate_lr <- function(train_index,
+                                  base_data=FALSE) {
+  if (base_data) {
+    train_data <- baseline_train_data[-train_index, ]
+    validation_data <- baseline_train_data[train_index, ]
+  } else {
+    train_data <- rest_data[-train_index, ]
+    validation_data <- rest_data[train_index, ]
+  }
   
   # Train the Logistic Regression Model
   lr_model <- glm(has_card.card ~ ., 
@@ -2757,7 +2764,8 @@ Die Funktion `perform_cross_validation` führt auf jeden kfold die vorherhige im
 
 ```{r}
 perform_cross_validation <- function(data_partition, 
-                                     train_eval_function) {
+                                     train_eval_function,
+                                     base_data=FALSE) {
   roc_curves <- list()
   results_df <- data.frame(Fold = integer(), 
                            AUC = numeric(), 
@@ -2771,7 +2779,7 @@ perform_cross_validation <- function(data_partition,
 
   # Perform cross-validation
   for (fold in 1:num_folds) {
-    result <- train_eval_function(data_partition[[fold]])
+    result <- train_eval_function(data_partition[[fold]], base_data=base_data)
     roc_curves[[fold]] <- result$roc_curve
     results_df <- rbind(results_df, data.frame(Fold = fold, 
                                                AUC = result$auc, 
@@ -2863,7 +2871,9 @@ Die logistische Regression kann leicht interpretiert werden und eignet sich gut 
 
 ## 15.1 Baseline Model 
 ```{r}
-cv_results_base <- perform_cross_validation(data_partition_base, train_and_evaluate_lr)
+cv_results_base <- perform_cross_validation(data_partition, 
+                                            train_and_evaluate_lr, 
+                                            base_data = TRUE)
 
 roc_curves_base <- cv_results_base$roc_curves
 results_df_base <- cv_results_base$results_df
@@ -2883,7 +2893,9 @@ Baseline Modelles durch Erweiterung erklärender Variablen,
 Verwendung anderer Algorithmen und Optimierung.
 
 ```{r}
-cv_results_full <- perform_cross_validation(data_partition_full, train_and_evaluate_lr)
+cv_results_full <- perform_cross_validation(data_partition, 
+                                            train_and_evaluate_lr, 
+                                            base_data = FALSE)
 
 roc_curves_full <- cv_results_full$roc_curves
 results_df_full <- cv_results_full$results_df
@@ -2907,7 +2919,17 @@ Es kombiniert mehrere Entscheidungsbäume, um robustere Klassifikationsmodelle z
 
 ```{r}
 # Create a function to train the Random Forest model and evaluate
-train_and_evaluate_rfc <- function(train_index) {
+train_and_evaluate_rfc <- function(train_index, base_data=FALSE) {
+  
+    if (base_data) {
+    train_data <- baseline_train_data[-train_index, ]
+    validation_data <- baseline_train_data[train_index, ]
+  } else {
+    train_data <- rest_data[-train_index, ]
+    validation_data <- rest_data[train_index, ]
+  }
+  
+  
   # Subset the training data for the current fold
   train_data <- baseline_train_data[-train_index, ]
   validation_data <- baseline_train_data[train_index, ]
@@ -2917,7 +2939,9 @@ train_and_evaluate_rfc <- function(train_index) {
   rcf_model <- ranger(has_card.card ~ ., 
                       data = train_data, 
                       classification = TRUE, 
-                      probability = TRUE)
+                      probability = TRUE,
+                      seed=123,
+                      )
 
   
   # Prediction on the Validation Data
@@ -2970,7 +2994,9 @@ train_and_evaluate_rfc <- function(train_index) {
 ```
 
 ```{r}
-cv_results_rfc <- perform_cross_validation(data_partition_base, train_and_evaluate_rfc)
+cv_results_rfc <- perform_cross_validation(data_partition, 
+                                           train_and_evaluate_rfc,
+                                           base_data=FALSE)
 
 roc_curves_rfc <- cv_results_rfc$roc_curves
 results_df_rfc <- cv_results_rfc$results_df
@@ -2984,17 +3010,13 @@ result_rfc$data
 ```
 
 
-### 15.4 Andere Algorithmen - KNN
-K-Nearest Neighbors ist ein einfaches, instanzbasiertes Klassifikationsmodell.
-Es klassifiziert Beobachtungen, indem es die Klassen der k nächstgelegenen Nachbarn betrachtet.
-K-NN eignet sich gut für datengetriebene Aufgaben und erfordert keine Annahmen über die Datenverteilung.
-```{r}
-
-```
+## 15.4 Andere Algorithmen
 
 
-### 15.5 Andere Optimierungen
+
+## 15.5 Andere Optimierungen
 XGBoost
+
 
 # 16. Vergleich der Modelle
 Vergleichen der Kandidatenmodelle und identifizieren des bzgl. 

@@ -2856,6 +2856,11 @@ plot_roc <- function(roc_curves, roc_folds = FALSE, roc_model = FALSE) {
 Nun geht es darum, die Bausteine aus Kapitel 14 zusammenzufügen sowie zu testen, ob wir die gewünschten Resultate erhalten. Dies tun wir direkt, indem wir unser Baseline Model mit den wenigen Features erstellen. 
 Bemerkung: Die Daten haben wir oben im Kapitel 14.1 schon vorbereitet.
 
+Die logistische Regression ist ein einfaches, aber weit verbreitetes Modell für binäre Klassifikationsprobleme.
+Sie basiert auf der logistischen Funktion, die die Wahrscheinlichkeit berechnet, dass eine Beobachtung zu einer bestimmten Klasse gehört.
+Die logistische Regression kann leicht interpretiert werden und eignet sich gut für den Einstieg in Klassifikationsprobleme.
+
+
 ## 15.1 Baseline Model 
 ```{r}
 cv_results_base <- perform_cross_validation(data_partition_base, train_and_evaluate_lr)
@@ -2876,6 +2881,7 @@ result_base$data
 Systematisches Explorieren von Verbesserungsmöglichkeiten des 
 Baseline Modelles durch Erweiterung erklärender Variablen, 
 Verwendung anderer Algorithmen und Optimierung.
+
 ```{r}
 cv_results_full <- perform_cross_validation(data_partition_full, train_and_evaluate_lr)
 
@@ -2895,6 +2901,9 @@ result_full$data
 ## 15.3 Andere Algorithmen - Random Forest Model
 
 Zuerst schreiben wir die `train_and_evaluate` Funktion, diesmal statt mit der Logistische Regression, nutzen wir den Random Forest. Ansonsten belibt die Funktion in seiner Grundstruktur die selbe, hier hätte man durchaus code Wiederholungen verhindern können. Jedoch habe ich mich einfachhalts halber mal entschieden dies so zu lassen und zu einem späteren Zeitpunkt aufzuräumen, falls ich noch Zeit und Kapazität habe (18.12.23).
+
+Random Forest ist ein Ensemble-Lernverfahren, das auf Entscheidungsbäumen basiert.
+Es kombiniert mehrere Entscheidungsbäume, um robustere Klassifikationsmodelle zu erstellen.
 
 ```{r}
 # Create a function to train the Random Forest model and evaluate
@@ -2975,8 +2984,17 @@ result_rfc$data
 ```
 
 
-### 15.4 Andere Optimierungen
+### 15.4 Andere Algorithmen - KNN
+K-Nearest Neighbors ist ein einfaches, instanzbasiertes Klassifikationsmodell.
+Es klassifiziert Beobachtungen, indem es die Klassen der k nächstgelegenen Nachbarn betrachtet.
+K-NN eignet sich gut für datengetriebene Aufgaben und erfordert keine Annahmen über die Datenverteilung.
+```{r}
 
+```
+
+
+### 15.5 Andere Optimierungen
+XGBoost
 
 # 16. Vergleich der Modelle
 Vergleichen der Kandidatenmodelle und identifizieren des bzgl. 

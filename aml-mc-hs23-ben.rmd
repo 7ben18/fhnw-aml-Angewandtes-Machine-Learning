@@ -26,6 +26,9 @@ library(lubridate)
 library(eeptools)
 library(zoo)
 library(arrow)
+library(caret)
+library(pROC)
+library(ranger)
 ```
 
 
@@ -2583,30 +2586,16 @@ Die Funktion `create_kfold` erlaubt es mir eine definierte anzahl an folds den `
 ```{r}
 create_kfold <- function(rest_data, num_folds = 10, strata_col = has_card.card) {
   set.seed(19981218)
-  # Create cross-validation folds
   cross_val_folds <- vfold_cv(rest_data, v = num_folds, strata = has_card.card)
-  
-  # Initialize a list to store the training and validation datasets
   fold_datasets <- list()
-  
-  # Loop through each fold
   for (i in 1:nrow(cross_val_folds)) {
-    # Select the current training and validation datasets
     train_data <- cross_val_folds$splits[[i]] %>% analysis()
     val_data <- cross_val_folds$splits[[i]] %>% assessment()
-    
-    # Store the datasets in a list
     fold_datasets[[i]] <- list(train_data = train_data, val_data = val_data)
   }
-  
-  # Return the list of fold datasets
   return(fold_datasets)
 }
-
-# auf den restlichen Daten k-folds erstellen
 kfolds_data <- create_kfold(rest_data)
-
-
 ```
 
 ## 13.4 Baseline Model mit k-fold=10
@@ -2614,26 +2603,17 @@ Hier in diesem Abschnitt erstelle ich aus den kfolds Daten das Baseline Modell u
 ```{r}
 models <- list()
 models_eval <- list()
-
 for (i in 1:length(kfolds_data)) {
-    # Get the training and validation datasets for the current fold
     train_data <- kfolds_data[[i]]$train_data
     val_data <- kfolds_data[[i]]$val_data
-    
-    # Fit the logistic regression model for the current fold
     base_line_model <- glm(has_card.card ~ age.client +
                              gender.client + region.district +
                              mean_balance + mean_gutschrift +
                              mean_belastung, data = train_data,
                            family = binomial)
-    
-    # Store the model in the list
     models[[i]] <- base_line_model
-    
-    # perform evaluation with model_evlaution function
     models_eval[[i]] <- model_evaluation(base_line_model, val_data) 
     models_eval[[i]]$baseline_model_nr = i
-    
 }
 ```
 
@@ -2684,9 +2664,16 @@ all_baseline_results %>%  group_by(threshold) %>%
 
 
 
-# 14 Baseline Model - Logistic Regression
+# 14 Model Setup
+Nach der Kontaktstunde mit Dani wurde mir bewusst, dass die vorherhigen Kapitel 12 und 13 durch libraries ersetzt werden können. Tidymodels - das Stichwort oder besser gesagt die Erlösung. Nichts desto trotz wollte ich diese beiden vorherhigen Kapitel nicht löschen, sie sollen zeigen, dass ich mich mit der Materie befasst habe. In diesem Kapitel erstellen wir wieder unser Baseline Modell mit den bekannten Features die wir kennen und plotten die ROC Kurve, wie auch die Resultate von jedem Fold in einem Dataframe.
 
-## 14.1 Create Baseline Data  
+Wieder beginnen wir damit Funktionen zu schreiben, die uns nützlich sind in der Modellierung und Klassifizierung sowie Evaluierung auf unseren KFold Datensatz.
+
+## 14.1 Funktion - Baseline Daten + kFolds
+Die Funktion  ``create_baseline_data`` filtert uns die wichtigsten Features aus unserem grossen Datensatz. Diese Feature werden verwendet für unser Baseline Model. 
+
+Auch erstellen wir direkt aus dem ganzen Datensatz die Daten Partitionierung bzw. unsere Kfolds. 
+
 ```{r}
 create_baseline_data <- function(data) {
   baseline_data <- data %>%
@@ -2705,18 +2692,17 @@ baseline_test_data
 set.seed(123)
 num_folds <- 10
 
-# Create a data partition for cross-validation
 data_partition_base <- createFolds(baseline_train_data$has_card.card, k = num_folds)
-#data_partition[["Fold01"]]
+data_partition_full <- createFolds(rest_data$has_card.card, k = num_folds)
+
 ```
 
+## 14.2 Funktion Baseline Model (Logistische Regression)
 
+Die Funktion `train_and_evaluate_lr` ist ein glm Model, welches eine Binäre Klassifkation durchführt mit der Zielvariable `has_card.card`. Diese Baseline Funktion dient als Grundlage für weitere Model Funktionen, welche später hinzukommen.
 
-
-## 14.2 Funktion for Training Logistic Regression Model
 ```{r}
 train_and_evaluate_lr <- function(train_index) {
-  # Subset the training data for the current fold
   train_data <- baseline_train_data[-train_index, ]
   validation_data <- baseline_train_data[train_index, ]
   
@@ -2735,17 +2721,22 @@ train_and_evaluate_lr <- function(train_index) {
   
   # Modify to return both AUC and ROC curve data
   roc_data <- roc(lr_pred_validation$has_card.card, lr_pred_validation$has_card_prob)
-  
   auc <- auc(roc_data)
   
   # Calculate additional metrics
-  confusion_matrix <- table(Predicted = lr_pred_validation$has_card_decision, Actual = lr_pred_validation$has_card.card)
+  confusion_matrix <- table(Predicted = lr_pred_validation$has_card_decision, 
+                            Actual = lr_pred_validation$has_card.card)
+  tp <- confusion_matrix[2, 2]
+  tn <- confusion_matrix[1, 1]
+  fp <- confusion_matrix[1, 2]
+  fn <- confusion_matrix[2, 1]
   accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
-  precision <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
-  recall <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+  precision <- tp / (tp + fp)
+  recall <- tp / (tp + fn)
   f1_score <- 2 * precision * recall / (precision + recall)
-  f05_score <- (1 + 0.5**2) * precision * recall / (0.5**2 * precision + recall)
-  f2_score <- (1 + 2**2) * precision * recall / (2**2 * precision + recall)
+  f05_score <- (1 + 0.5^2) * precision * recall / (0.5^2 * precision + recall)
+  f2_score <- (1 + 2^2) * precision * recall / (2^2 * precision + recall)
+  mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
 
   return(list(auc = auc, 
               roc_curve = roc_data, 
@@ -2754,105 +2745,156 @@ train_and_evaluate_lr <- function(train_index) {
               recall = recall,
               f1_score = f1_score,
               f05_score = f05_score,
-              f2_score = f2_score))
+              f2_score = f2_score,
+              mcc = mcc))
 }
 
 ```
 
-## 14.3 Perform Cross-Validation on Base Dataset
+## 14.3 Funktion Cross-Validation
+
+Die Funktion `perform_cross_validation` führt auf jeden kfold die vorherhige implementierte `train_and_evaluation` Funktion aus und gibt dabei zwei wichtige Variabeln zurück, ein DataFrame welches alle Metriken enthalten und die ROC-Kurve, welche uns für die Auswertung sowie Visualisierung nützlich sein wird.
+
 ```{r}
-# initalize empty list and df
-roc_curves <- list()
-results_df <- data.frame(Fold = integer(), 
-                         AUC = numeric(), 
-                         Accuracy = numeric(), 
-                         Precision = numeric(), 
-                         Recall = numeric(),
-                         f1_Score = numeric(),
-                         f05_Score = numeric(),
-                         f2_Score = numeric())
+perform_cross_validation <- function(data_partition, 
+                                     train_eval_function) {
+  roc_curves <- list()
+  results_df <- data.frame(Fold = integer(), 
+                           AUC = numeric(), 
+                           Accuracy = numeric(), 
+                           Precision = numeric(), 
+                           Recall = numeric(),
+                           f1_Score = numeric(),
+                           f05_Score = numeric(),
+                           f2_Score = numeric(),
+                           mcc = numeric())
 
-# Perform cross-validation
-for (fold in 1:num_folds) {
-  result <- train_and_evaluate_lr(data_partition_base[[fold]])
-  roc_curves[[fold]] <- result$roc_curve
-  results_df <- rbind(results_df, data.frame(Fold = fold, 
-                                             AUC = result$auc, 
-                                             Accuracy = result$accuracy, 
-                                             Precision = result$precision, 
-                                             Recall = result$recall,
-                                             f1_score = result$f1_score,
-                                             f05_score = result$f05_score,
-                                             f2_score = result$f2_score))
-
-}
-
-results_df
-```
-
-
-## 14.4 Plot Base ROC Curve
-```{r}
-# Plotting ROC curves
-plot_data <- data.frame()
-
-for (fold in 1:num_folds) {
-  fold_data <- data.frame(TPR = roc_curves[[fold]]$sensitivities,
-                          FPR = 1 - roc_curves[[fold]]$specificities,
-                          Fold = as.factor(fold))
+  # Perform cross-validation
+  for (fold in 1:num_folds) {
+    result <- train_eval_function(data_partition[[fold]])
+    roc_curves[[fold]] <- result$roc_curve
+    results_df <- rbind(results_df, data.frame(Fold = fold, 
+                                               AUC = result$auc, 
+                                               Accuracy = result$accuracy, 
+                                               Precision = result$precision, 
+                                               Recall = result$recall,
+                                               f1_score = result$f1_score,
+                                               f05_score = result$f05_score,
+                                               f2_score = result$f2_score,
+                                               mcc = result$mcc))
+  }
   
-  plot_data <- rbind(plot_data, fold_data)
+  # describe dataframe into 5 statistical summaries
+  results_df_stats <- summary(results_df)
+
+  return(list(roc_curves = roc_curves, results_df = results_df, 
+              results_df_stats = results_df_stats))
 }
 
-# plot roc curve
-ggplot(plot_data, aes(x = FPR, y = TPR, color = Fold)) +
-  geom_line() +
-  labs(title = "ROC Curves for Each Fold", x = "False Positive Rate", y = "True Positive Rate") +
-  theme_minimal() +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray")
+
 ```
 
 
-# 15 Random Forest Model - Andere Algorithmen 
+## 14.4 Funktion um Roc Kurve zu plotten
 
-Nach der Kontaktstunde mit Dani wurde mir bewusst, dass die vorherhigen Kapitel 12 und 13 durch libraries ersetzt werden können. Tidymodels - das Stichwort oder besser gesagt die Erlösung. Nichts desto trotz wollte ich diese beiden vorherhigen Kapitel nicht löschen, sie sollen zeigen, dass ich mich mit der Materie befasst habe. In diesem Kapitel erstellen wir wieder unser Baseline Modell mit den bekannten Features die wir kennen und plotten die ROC Kurve, wie auch die Resultate von jedem Fold in einem Dataframe.
+Die Funktion `plot_roc` nimmt von den output der vorherhigen Funktion `perform_cross_validation` und hat dabei zwei Parameter `roc_folds, roc_model`, welches uns erlaubt, entweder die Roc Kurven von allen Kfolds und/oder vom Model zu plotten.
+Weiter gibt die Funktion ein Aggregiertes DataFrame zurück, damit wir später für den Model Vergleich, unterschiedliche Modelle miteinander visusalisieren können.
 
-## 15.1 Random Forest Model mit Baseline Feautres
 ```{r}
-create_baseline_data <- function(data) {
-  baseline_data <- data %>%
-    select(has_card.card, age.client, gender.client, region.district, mean_balance, mean_gutschrift, mean_belastung) %>%
-    arrange(has_card.card)
+plot_roc <- function(roc_curves, roc_folds = FALSE, roc_model = FALSE) {
+  plot_data <- data.frame()
   
-  return(baseline_data)
+  num_folds <- length(roc_curves)
+  
+  for (fold in 1:num_folds) {
+    fold_data <- data.frame(TPR = roc_curves[[fold]]$sensitivities,
+                            FPR = 1 - roc_curves[[fold]]$specificities,
+                            Fold = as.factor(fold))
+    
+    plot_data <- rbind(plot_data, fold_data)
+  }
+  
+  # plot roc curve
+  roc_plot <- ggplot(plot_data, aes(x = FPR, y = TPR, color = Fold)) +
+    geom_line() +
+    labs(title = "ROC Kurve für jeden Fold", x = "False Positive Rate", y = "True Positive Rate") +
+    theme_minimal() +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray")
+  
+  if (roc_folds) {
+    print(roc_plot)
+  }
+  
+  aggregated_data <- plot_data %>%
+    group_by(FPR) %>%
+    summarise(
+      MEAN_TPR = mean(TPR),
+      SD_TPR = sd(TPR),
+      Upper = MEAN_TPR + SD_TPR,
+      Lower = MEAN_TPR - SD_TPR
+    )
+  
+  # plot aggregated roc curve
+  aggregated_plot <- aggregated_data %>%
+    ggplot(aes(x = FPR, y = MEAN_TPR)) + 
+    geom_line(color = "lightblue") + 
+    geom_ribbon(aes(ymin = Lower, ymax = Upper), alpha = 0.2) +
+    labs(title = "ROC Model Performance", x = "False Positive Rate", y = "True Positive Rate", subtitle = "Durchschnittliche Model Performance mit 1 Sigma") + 
+    theme_minimal() +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray")
+  
+  if (roc_model) {
+    print(aggregated_plot)
+  }
+  
+  return(list(data = aggregated_data))
 }
-
-baseline_train_data <- create_baseline_data(rest_data)
-baseline_test_data <- create_baseline_data(test_data)
-
-baseline_train_data
-baseline_test_data
-
 ```
 
 
-## 15.2 Partitionierung in K-Folds
+# 15 Baseline Model
+Nun geht es darum, die Bausteine aus Kapitel 14 zusammenzufügen sowie zu testen, ob wir die gewünschten Resultate erhalten. Dies tun wir direkt, indem wir unser Baseline Model mit den wenigen Features erstellen. 
+Bemerkung: Die Daten haben wir oben im Kapitel 14.1 schon vorbereitet.
 
-Auch hier habe ich einen bessere Funktion gefunden, die mir die Arbeit abnimmt. 
-Damit wir die Partitionierung reproduzieren können, setzen wir den Seed auf 123 und num_folds auf 10. 
-Die Partitionierung gibt mir die Indexe des Dataframes zurück, die ich dann in der nächsten Funktion verwenden kann.
+## 15.1 Baseline Model 
 ```{r}
-set.seed(123)
-num_folds <- 10
+cv_results_base <- perform_cross_validation(data_partition_base, train_and_evaluate_lr)
 
-# Create a data partition for cross-validation
-data_partition_base <- createFolds(baseline_train_data$has_card.card, k = num_folds)
-data_partition_full <- createFolds(rest_data$has_card.card, k = num_folds)
+roc_curves_base <- cv_results_base$roc_curves
+results_df_base <- cv_results_base$results_df
+results_df_base_stats <- cv_results_base$results_df_stats
+
+results_df_base_stats
+results_df_base
+
+result_base <- plot_roc(roc_curves_base, roc_folds = TRUE, roc_model = TRUE)
+result_base$data
 
 ```
 
+## 15.2 Verbesserung des Baseline Modell
+Systematisches Explorieren von Verbesserungsmöglichkeiten des 
+Baseline Modelles durch Erweiterung erklärender Variablen, 
+Verwendung anderer Algorithmen und Optimierung.
+```{r}
+cv_results_full <- perform_cross_validation(data_partition_full, train_and_evaluate_lr)
 
-## 15.3 Train and Evaluation Funktion für Baseline Model
+roc_curves_full <- cv_results_full$roc_curves
+results_df_full <- cv_results_full$results_df
+results_df_full_stats <- cv_results_full$results_df_stats
+
+results_df_full_stats
+results_df_full
+
+
+result_full <- plot_roc(roc_curves_full, roc_folds = TRUE, roc_model = TRUE)
+result_full$data
+
+```
+
+## 15.3 Andere Algorithmen - Random Forest Model
+
+Zuerst schreiben wir die `train_and_evaluate` Funktion, diesmal statt mit der Logistische Regression, nutzen wir den Random Forest. Ansonsten belibt die Funktion in seiner Grundstruktur die selbe, hier hätte man durchaus code Wiederholungen verhindern können. Jedoch habe ich mich einfachhalts halber mal entschieden dies so zu lassen und zu einem späteren Zeitpunkt aufzuräumen, falls ich noch Zeit und Kapazität habe (18.12.23).
 
 ```{r}
 # Create a function to train the Random Forest model and evaluate
@@ -2890,15 +2932,20 @@ train_and_evaluate_rfc <- function(train_index) {
   
   auc <- auc(roc_data)
   
-   # Calculate additional metrics
+  # Calculate additional metrics
   confusion_matrix <- table(Predicted = rfc_pred_validation$has_card_decision, 
                             Actual = rfc_pred_validation$has_card.card)
+  tp <- confusion_matrix[2, 2]
+  tn <- confusion_matrix[1, 1]
+  fp <- confusion_matrix[1, 2]
+  fn <- confusion_matrix[2, 1]
   accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
-  precision <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
-  recall <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+  precision <- tp / (tp + fp)
+  recall <- tp / (tp + fn)
   f1_score <- 2 * precision * recall / (precision + recall)
-  f05_score <- (1 + 0.5**2) * precision * recall / (0.5**2 * precision + recall)
-  f2_score <- (1 + 2**2) * precision * recall / (2**2 * precision + recall)
+  f05_score <- (1 + 0.5^2) * precision * recall / (0.5^2 * precision + recall)
+  f2_score <- (1 + 2^2) * precision * recall / (2^2 * precision + recall)
+  mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
 
   return(list(auc = auc, 
               roc_curve = roc_data, 
@@ -2907,143 +2954,29 @@ train_and_evaluate_rfc <- function(train_index) {
               recall = recall,
               f1_score = f1_score,
               f05_score = f05_score,
-              f2_score = f2_score))
+              f2_score = f2_score,
+              mcc = mcc))
 }
 
 ```
 
-## 15.4 Resultate von jedem Fold in einem Dataframe speichern
-
-Wir führen die Funktion `train_and_evaluate` für jeden Fold aus und speichern die Resultate in einem Dataframe sowie die ROC Kurven in einer Liste, um sie später zu plotten.
 ```{r}
-# initalize empty list and df
-roc_curves <- list()
-results_df <- data.frame(Fold = integer(), 
-                         AUC = numeric(), 
-                         Accuracy = numeric(), 
-                         Precision = numeric(), 
-                         Recall = numeric(),
-                         f1_Score = numeric(),
-                         f05_Score = numeric(),
-                         f2_Score = numeric())
+cv_results_rfc <- perform_cross_validation(data_partition_base, train_and_evaluate_rfc)
 
-# Perform cross-validation
-for (fold in 1:num_folds) {
-  result <- train_and_evaluate_rfc(data_partition_base[[fold]])
-  roc_curves[[fold]] <- result$roc_curve
-  results_df <- rbind(results_df, data.frame(Fold = fold, 
-                                             AUC = result$auc, 
-                                             Accuracy = result$accuracy, 
-                                             Precision = result$precision, 
-                                             Recall = result$recall,
-                                             f1_score = result$f1_score,
-                                             f05_score = result$f05_score,
-                                             f2_score = result$f2_score))
+roc_curves_rfc <- cv_results_rfc$roc_curves
+results_df_rfc <- cv_results_rfc$results_df
+results_df_rfc_stats <- cv_results_rfc$results_df_stats
 
-}
+results_df_rfc_stats
+results_df_rfc
 
-results_df
+result_rfc <- plot_roc(roc_curves_rfc, roc_folds = TRUE, roc_model = TRUE)
+result_rfc$data
 ```
 
 
-```{r}
-perform_cross_validation <- function(data_partition) {
-    # Initialize empty list and dataframe for storing results
-    roc_curves <- list()
-    results_df <- data.frame(Fold = integer(), 
-                             AUC = numeric(), 
-                             Accuracy = numeric(), 
-                             Precision = numeric(), 
-                             Recall = numeric(),
-                             f1_Score = numeric(),
-                             f05_Score = numeric(),
-                             f2_Score = numeric())
+### 15.4 Andere Optimierungen
 
-    # Perform cross-validation
-    for (fold in 1:num_folds) {
-        result <- train_and_evaluate_rfc(data_partition[[fold]])
-        roc_curves[[fold]] <- result$roc_curve
-        results_df <- rbind(results_df, data.frame(Fold = fold, 
-                                                   AUC = result$auc, 
-                                                   Accuracy = result$accuracy, 
-                                                   Precision = result$precision, 
-                                                   Recall = result$recall,
-                                                   f1_score = result$f1_score,
-                                                   f05_score = result$f05_score,
-                                                   f2_score = result$f2_score))
-    }
-
-    # Return results
-    list(ResultsDataFrame = results_df, ROC_Curves = roc_curves)
-}
-
-
-# Assuming `data_partition_base` and `num_folds` are already defined
-cross_val_results_base <- perform_cross_validation(data_partition_base)
-results_df <- cross_val_results_base$ResultsDataFrame
-roc_curves <- cross_val_results_base$ROC_Curves
-
-cross_val_results_full <- perform_cross_validation(data_partition_full)
-results_df <- cross_val_results_full$ResultsDataFrame
-roc_curves <- cross_val_results_full$ROC_Curves
-
-```
-
-
-
-## 15.5 ROC Kurven
-```{r}
-# Plotting ROC curves
-plot_data <- data.frame()
-
-for (fold in 1:num_folds) {
-  fold_data <- data.frame(TPR = roc_curves[[fold]]$sensitivities,
-                          FPR = 1 - roc_curves[[fold]]$specificities,
-                          Fold = as.factor(fold)) 
-  
-  plot_data <- rbind(plot_data, fold_data)
-  
-}
-
-# plot roc curve
-ggplot(plot_data, aes(x = FPR, 
-                      y = TPR, 
-                      color = Fold)) +
-  geom_line() +
-  labs(title = "ROC Curves for Each Fold", 
-       x = "False Positive Rate", 
-       y = "True Positive Rate") +
-  theme_minimal() +
-  geom_abline(slope = 1, 
-              intercept = 0, 
-              linetype = "dashed", 
-              color = "gray")
-```
-
-
-
-
-
-
-# 15. Verbesserung des Baseline Modell
-Systematisches Explorieren von Verbesserungsmöglichkeiten des 
-Baseline Modelles durch Erweiterung erklärender Variablen, 
-Verwendung anderer Algorithmen und Optimierung.
-
-## 15.1
-```{r}
-
-```
-
-## 15.2 Andere Algorithmen 
-```{r}
-
-```
-
-## 15.3 Andere Optimierungen
-```{r}
-
-```
 
 # 16. Vergleich der Modelle
 Vergleichen der Kandidatenmodelle und identifizieren des bzgl. 
@@ -3051,7 +2984,9 @@ Performance “besten” Modelles mit ROC, AUC und Precision.
 
 ## 16.1 Modell Vergleich
 ```{r}
-
+result_base$data
+result_full$data
+result_rfc$data
 ```
 
 

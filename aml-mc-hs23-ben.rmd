@@ -30,6 +30,7 @@ library(caret)
 library(pROC)
 library(ranger)
 library(e1071)
+library(rpart)
 ```
 
 
@@ -2836,18 +2837,14 @@ plot_roc <- function(roc_curves, roc_folds = FALSE, roc_model = FALSE) {
   aggregated_data <- plot_data %>%
     group_by(FPR) %>%
     summarise(
-      MEAN_TPR = mean(TPR),
-      SD_TPR = sd(TPR),
-      Upper = MEAN_TPR + SD_TPR,
-      Lower = MEAN_TPR - SD_TPR
+      MEAN_TPR = mean(TPR)
     )
   
   # plot aggregated roc curve
   aggregated_plot <- aggregated_data %>%
     ggplot(aes(x = FPR, y = MEAN_TPR)) + 
     geom_line(color = "lightblue") + 
-    geom_ribbon(aes(ymin = Lower, ymax = Upper), alpha = 0.2) +
-    labs(title = "ROC Model Performance", x = "False Positive Rate", y = "True Positive Rate", subtitle = "Durchschnittliche Model Performance mit 1 Sigma") + 
+    labs(title = "ROC Model Performance", x = "False Positive Rate", y = "True Positive Rate", subtitle = "Durchschnittliche Model Performance") + 
     theme_minimal() +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray")
   
@@ -2859,7 +2856,6 @@ plot_roc <- function(roc_curves, roc_folds = FALSE, roc_model = FALSE) {
 }
 ```
 
-
 # 15 Baseline Model
 Nun geht es darum, die Bausteine aus Kapitel 14 zusammenzufügen sowie zu testen, ob wir die gewünschten Resultate erhalten. Dies tun wir direkt, indem wir unser Baseline Model mit den wenigen Features erstellen. 
 Bemerkung: Die Daten haben wir oben im Kapitel 14.1 schon vorbereitet.
@@ -2868,8 +2864,7 @@ Die logistische Regression ist ein einfaches, aber weit verbreitetes Modell für
 Sie basiert auf der logistischen Funktion, die die Wahrscheinlichkeit berechnet, dass eine Beobachtung zu einer bestimmten Klasse gehört.
 Die logistische Regression kann leicht interpretiert werden und eignet sich gut für den Einstieg in Klassifikationsprobleme.
 
-
-## 15.1 Baseline Model 
+## 15.1 Baseline Model - Logistische Regression
 ```{r}
 cv_results_base <- perform_cross_validation(data_partition, 
                                             train_and_evaluate_lr, 
@@ -2882,7 +2877,9 @@ results_df_base_stats <- cv_results_base$results_df_stats
 results_df_base_stats
 results_df_base
 
-result_base <- plot_roc(roc_curves_base, roc_folds = TRUE, roc_model = TRUE)
+result_base <- plot_roc(roc_curves_base,
+                        roc_folds = TRUE, 
+                        roc_model = TRUE)
 result_base$data
 
 ```
@@ -2891,6 +2888,8 @@ result_base$data
 Systematisches Explorieren von Verbesserungsmöglichkeiten des 
 Baseline Modelles durch Erweiterung erklärender Variablen, 
 Verwendung anderer Algorithmen und Optimierung.
+
+Hier in diesem Abschnitt schmeissen wir alle Variabeln aus unserem Dataframe herin mit dem Paramater `base_data = FALSE` und schauen uns, was das bringt. 
 
 ```{r}
 cv_results_full <- perform_cross_validation(data_partition, 
@@ -2910,7 +2909,97 @@ result_full$data
 
 ```
 
-## 15.3 Andere Algorithmen - Random Forest Model
+# 16 Andere Algorithmen - Decision Tree
+
+```{r}
+train_and_evaluate_dtc <- function(train_index, 
+                                   base_data=FALSE) {
+  
+  if (base_data) {
+    train_data <- baseline_train_data[-train_index, ]
+    validation_data <- baseline_train_data[train_index, ]
+  } else {
+    train_data <- rest_data[-train_index, ]
+    validation_data <- rest_data[train_index, ]
+  }
+  
+  # Train the Decision Tree Model
+  dtc_model <- rpart(has_card.card ~ ., 
+                     data = train_data, 
+                     method = "class")
+  
+  # Prediction on the Validation Data
+  dtc_validation_prediction <- predict(dtc_model, 
+                                       newdata = validation_data, 
+                                       type = "prob")
+  
+  # Create a data frame for prediction results
+  dtc_pred_validation <- data.frame(has_card_prob = dtc_validation_prediction[, 2], 
+                                    has_card_decision = as.factor(
+                                      ifelse(
+                                        dtc_validation_prediction[, 2] >= 0.5, 1, 0)
+                                      ),
+                                    has_card.card = as.factor(
+                                      ifelse(
+                                        validation_data$has_card.card == "TRUE", 1, 0)
+                                      ))
+  
+  # Calculate ROC and AUC
+  roc_data <- roc(dtc_pred_validation$has_card.card, 
+                  dtc_pred_validation$has_card_prob)
+  auc <- auc(roc_data)
+  
+  # Calculate additional metrics
+  confusion_matrix <- table(Predicted = dtc_pred_validation$has_card_decision, 
+                            Actual = dtc_pred_validation$has_card.card)
+  tp <- confusion_matrix[2, 2]
+  tn <- confusion_matrix[1, 1]
+  fp <- confusion_matrix[1, 2]
+  fn <- confusion_matrix[2, 1]
+  accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+  precision <- tp / (tp + fp)
+  recall <- tp / (tp + fn)
+  f1_score <- 2 * precision * recall / (precision + recall)
+  f05_score <- (1 + 0.5^2) * precision * recall / (0.5^2 * precision + recall)
+  f2_score <- (1 + 2^2) * precision * recall / (2^2 * precision + recall)
+  mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+
+  return(list(auc = auc, 
+              roc_curve = roc_data, 
+              accuracy = accuracy, 
+              precision = precision, 
+              recall = recall,
+              f1_score = f1_score,
+              f05_score = f05_score,
+              f2_score = f2_score,
+              mcc = mcc))
+}
+
+```
+
+```{r}
+# Perform cross-validation with Decision Tree Classifier (DTC)
+cv_results_dtc <- perform_cross_validation(data_partition, 
+                                           train_and_evaluate_dtc,
+                                           base_data=FALSE)
+
+# Extract ROC curves and results for DTC
+roc_curves_dtc <- cv_results_dtc$roc_curves
+results_df_dtc <- cv_results_dtc$results_df
+results_df_dtc_stats <- cv_results_dtc$results_df_stats
+
+results_df_dtc_stats
+results_df_dtc
+
+# Plot ROC curves for DTC
+result_dtc <- plot_roc(roc_curves_dtc, roc_folds = TRUE, roc_model = TRUE)
+
+# Display ROC curve data for DTC
+result_dtc$data
+```
+
+
+# 17 Andere Algorithmen - Random Forest
 
 Zuerst schreiben wir die `train_and_evaluate` Funktion, diesmal statt mit der Logistische Regression, nutzen wir den Random Forest. Ansonsten belibt die Funktion in seiner Grundstruktur die selbe, hier hätte man durchaus code Wiederholungen verhindern können. Jedoch habe ich mich einfachhalts halber mal entschieden dies so zu lassen und zu einem späteren Zeitpunkt aufzuräumen, falls ich noch Zeit und Kapazität habe (18.12.23).
 
@@ -2972,6 +3061,7 @@ train_and_evaluate_rfc <- function(train_index, base_data=FALSE) {
   tn <- confusion_matrix[1, 1]
   fp <- confusion_matrix[1, 2]
   fn <- confusion_matrix[2, 1]
+  
   accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
   precision <- tp / (tp + fp)
   recall <- tp / (tp + fn)
@@ -3009,53 +3099,136 @@ result_rfc <- plot_roc(roc_curves_rfc, roc_folds = TRUE, roc_model = TRUE)
 result_rfc$data
 ```
 
+# 18 Andere Optimierungen - Xgboost
 
-## 15.4 Andere Algorithmen
+Für das Xgboost nehmen wir den OneHotEncoded DataFrame, den wir im oberen Abschnitt vorbereitet haben. 
+```{r}
+full_data_onehot
+
+set.seed(123)
+
+X <- as.matrix(full_data_onehot %>% select_if(is.numeric) %>% select(-c(has_card.card)))
+y <- full_data_onehot$has_card.card
+
+num_folds <- 10
+folds <- createFolds(y, 
+                     k = num_folds,
+                     list = TRUE,
+                     returnTrain = FALSE)
+
+```
+
+```{r}
+xgb_results <- data.frame()
+roc_list <- list()
+
+for(i in 1:num_folds){
+  test_idx <- folds[[i]]
+  train_idx <- setdiff(1:length(y), test_idx)
+
+  dtrain <- xgb.DMatrix(data = X[train_idx, ],
+                        label = y[train_idx])
+  
+  dtest <- xgb.DMatrix(data = X[test_idx, ],
+                       label = y[test_idx])
+
+  # Parameters for binary classification
+  params <- list(
+    objective = "binary:logistic",
+    eval_metric = "logloss",
+    eta = 0.3,
+    max_depth = 6
+  )
+  
+  # Train the model
+  bst <- xgb.train(params = params, 
+                   data = dtrain, 
+                   nrounds = 100)
+  # Predictions
+  pred_prob <- predict(bst, dtest)
+  pred_label <- ifelse(pred_prob > 0.5, 1, 0)
+  
+  confusion_matrix <- table(Predicted =
+                              factor(pred_label),
+                            Actual = y[test_idx])
+  
+  tp <- confusion_matrix[2, 2]
+  tn <- confusion_matrix[1, 1]
+  fp <- confusion_matrix[1, 2]
+  fn <- confusion_matrix[2, 1]
+  
+  accuracy <- (tp + tn) / (tp + tn + fp + fn)
+  precision <- tp / (tp + fp)
+  recall <- tp / (tp + fn)
+  f1_score <- 2 * precision * recall / (precision + recall)
+  f05_score <- (1 + 0.5^2) * precision * recall / (0.5^2 * precision + recall)
+  f2_score <- (1 + 2^2) * precision * recall / (2^2 * precision + recall)
+  mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+  
+  # ROC and AUC
+  roc_obj <- roc(response = y[test_idx], predictor = pred_prob)
+  auc <- auc(roc_obj)
+  roc_list[[i]] <- roc_obj
+  
+  # Store results
+  xgb_results <- rbind(xgb_results, data.frame(Fold = i,
+                                       auc = auc,
+                                       accuracy = accuracy, 
+                                       precision = precision, 
+                                       recall = recall, 
+                                       f1_score = f1_score,
+                                       f05_score = f05_score,
+                                       f2_score = f2_score,
+                                       mcc = mcc))
+}
+
+# View aggregated results
+print(xgb_results)
+```
+
+```{r}
+# View aggregated results
+print(xgb_results)
+plot_roc(roc_curves = roc_list, roc_folds = TRUE, roc_model = TRUE)
+```
 
 
-
-## 15.5 Andere Optimierungen
-XGBoost
-
-
-# 16. Vergleich der Modelle
+# 19. Vergleich der Modelle
 Vergleichen der Kandidatenmodelle und identifizieren des bzgl. 
 Performance “besten” Modelles mit ROC, AUC und Precision.
 
-## 16.1 Modell Vergleich
+## 19.1 Modell Vergleich
 ```{r}
-result_base$data
-result_full$data
-result_rfc$data
+
 ```
 
 
-# 17. Top-N Kunden 
+# 20. Top-N Kunden 
  Quantitatives Untersuchen der Unterschiede von Top-N Kunden Listen verschiedener Modelle
  
-## 17.1 Top-N Kunden Vergleich von Modellen
+## 20.1 Top-N Kunden Vergleich von Modellen
 ```{r}
 
 ```
 
  
-# 18. Wichtigkeit und Balancierung
+# 21. Wichtigkeit und Balancierung
 Untersuchen der globalen Wichtigkeit der Einflussfaktoren des 
 “besten” Modelles und Reduzieren des “besten” Modelles mittels 
 Balancieren von globaler Wichtigkeit und Modellperformance.
 
-## 18.1 Wichtigkeit
+## 21.1 Wichtigkeit
 ```{r}
 
 ```
 
-## 18.2 Balancierung 
+## 21.2 Balancierung 
 ```{r}
 
 ```
 
 
-# 18. Beschreibung 
+# 22. Beschreibung 
 Beschreiben des Mehrwerts des “finalen” Modelles in der Praxis.
 ```{r}
 

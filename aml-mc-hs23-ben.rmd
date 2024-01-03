@@ -2730,6 +2730,8 @@ train_and_evaluate_lr <- function(train_index,
   
   # Modify to return both AUC and ROC curve data
   roc_data <- roc(lr_pred_validation$has_card.card, lr_pred_validation$has_card_prob)
+  #smoothed_roc <- smooth(roc_data, method = "binormal", n = 10)
+  #auc <- auc(smoothed_roc)
   auc <- auc(roc_data)
   
   # Calculate additional metrics
@@ -2748,7 +2750,8 @@ train_and_evaluate_lr <- function(train_index,
   mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
 
   return(list(auc = auc, 
-              roc_curve = roc_data, 
+              roc_curve = roc_data,
+              #smoothed_roc_curve = smoothed_roc,
               accuracy = accuracy, 
               precision = precision, 
               recall = recall,
@@ -2782,6 +2785,7 @@ perform_cross_validation <- function(data_partition,
   # Perform cross-validation
   for (fold in 1:num_folds) {
     result <- train_eval_function(data_partition[[fold]], base_data=base_data)
+    #roc_curves[[fold]] <- result$smoothed_roc_curve
     roc_curves[[fold]] <- result$roc_curve
     results_df <- rbind(results_df, data.frame(Fold = fold, 
                                                AUC = result$auc, 
@@ -3143,7 +3147,7 @@ folds <- createFolds(y,
 
 ```{r}
 xgb_results <- data.frame()
-roc_list <- list()
+roc_curves_xgb <- list()
 
 for(i in 1:num_folds){
   test_idx <- folds[[i]]
@@ -3191,7 +3195,7 @@ for(i in 1:num_folds){
   # ROC and AUC
   roc_obj <- roc(response = y[test_idx], predictor = pred_prob)
   auc <- auc(roc_obj)
-  roc_list[[i]] <- roc_obj
+  roc_curves_xgb[[i]] <- roc_obj
   
   # Store results
   xgb_results <- rbind(xgb_results, data.frame(Fold = i,
@@ -3212,7 +3216,7 @@ print(xgb_results)
 ```{r}
 # View aggregated results
 print(xgb_results)
-plot_roc(roc_curves = roc_list, 
+plot_roc(roc_curves = roc_curves_xgb, 
          roc_folds = TRUE, 
          roc_model = TRUE,
          model_name = "XGBoost",
@@ -3297,27 +3301,16 @@ model_results_df %>%
 ```{r}
 
 model_names_list_string <- c("XGBoost", "Random Forest", "Decision Tree", "Logistic Reg. Full", "Logistic Reg. Baseline")
-roc_curves_list <- list(roc_list, roc_curves_rfc, roc_curves_dtc, roc_curves_full, roc_curves_base)
+roc_curves_list <- list(roc_curves_xgb, roc_curves_rfc, roc_curves_dtc, roc_curves_full, roc_curves_base)
 
-# Define the number of rows and columns for subplots
-num_rows <- 2  # Change this to the desired number of rows
-num_cols <- 3  # Change this to the desired number of columns
-
-for (i in 1:length(model_names_list_string)) {
-  # Set up the plotting grid for the current subplot
-  par(mfrow = c(num_rows, num_cols))
-  
-  plot_roc(roc_curves = roc_curves_list[[i]], 
+for (i in 1:length(roc_curves_list)) {
+  plot_roc(roc_curves_list[[i]], 
            roc_folds = FALSE, 
            roc_model = TRUE,
            model_name = model_names_list_string[[i]],
            get_agg_data = FALSE)
-  
-  # Reset the plotting layout for the next iteration
-  par(mfrow = c(1, 1))
 }
 
-# plot from roc_curves_list every roc curve 
 ```
 
 

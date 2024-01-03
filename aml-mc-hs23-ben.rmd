@@ -34,6 +34,7 @@ library(rpart)
 library(xgboost)
 library(DALEX)
 library(DALEXtra)
+library(gridExtra)
 ```
 
 
@@ -3330,10 +3331,121 @@ for (i in 1:length(roc_curves_list)) {
  Quantitatives Untersuchen der Unterschiede von Top-N Kunden Listen verschiedener Modelle
  
 ## 20.1 Top-N Kunden Vergleich von Modellen
+
+Eine Möglichkeit Top-N Kunden aus der Modellierung zu erhalten, ist es mit der Wahrscheinlichkeits Vorhersage des Modelles zu arbeiten. In unserem Fall, haben wir oben beim XGBoost Modell die variable `pred_prob` definiert. Diese wird jedoch leider nach jedem kfold wieder überschrieben, da diese sich in einer for Schleife befindet. Wir arbeiten trotzem einfachhaltshalber damit, müssen uns jedoch bewusst sein, dass es sich hierbei um den letzten kfold handelt und bei einem anderen Fold es nicht die identischen Resultate geben wird. Wir haben bei der Funktion `create_top_customer_df` die Möglichkeit die Anzahl der Top-N Kunden zu definieren, hierbei werden nur die Top-N Kunden als Dataframe zurückgegeben, welche noch keine Kreditkarte haben, aber das Modell diese vorhhersagt.
+
 ```{r}
 
+```{r}
+create_top_customer_df <- function(data_vector, pred_prob_vector, full_data, n_customer = 15) {
+  # Create a dataframe from the two vectors
+  top_customer_df <- data.frame(account_id = data_vector, pred_prob = pred_prob_vector) %>%
+    arrange(desc(pred_prob)) 
+  print(top_customer_df)
+  
+  # Inner join with full data
+  full_data_top_customer <- inner_join(full_data, 
+                                       top_customer_df, 
+                                       by = "account_id")  %>% 
+    filter(has_card.card == 0) %>% arrange(desc(pred_prob)) %>% 
+    head(n_customer) 
+  
+  return(full_data_top_customer)
+}
+
+top15_customer <- create_top_customer_df(folds[[10]], 
+                                         pred_prob, 
+                                         full_data_onehot,
+                                         n_customer = 15)
+top15_customer
+```
+
+### 20.1.1 Top-N Kunden Gemeinsamkeiten?
+Interessant ist es nun zu wissen, welche Gemeinsamkeiten diese Kunden haben, die keine Karte besitzen, unser Modell jedoch mit einer grossen Wahrscheinlichkeit vorhersagt, dass diese Kunden geeignet seien eine Karte zu besitzen. Hier eine kleine Explorative Analyse der Top-N Kunden.
+
+
+### 20.1.2 Altersverteilung der Top-N Kunden
+```{r}
+# distruitbio plot of age with geom_density
+ggplot(top15_customer, aes(x = age.client)) +
+  geom_density(alpha = 0.5) +
+  labs(
+    title = "Verteilung der Top-N Kunden nach Alter",
+    x = "Alter",
+    y = "Dichte"
+  ) +
+  theme_minimal()
+```
+
+
+### 20.1.3 Transaktionsdaten der Top-N Kunden
+```{r}
+# make grid plots of mean_balance and mean_gutschrift, mean_belastung
+grid.arrange(
+  ggplot(top15_customer, aes(x = mean_balance)) +
+    geom_density(alpha = 0.5) +
+    labs(
+      title = "Verteilung der Top-N \nKunden nach \nBalance",
+      x = "Balance",
+      y = "Dichte",
+      
+    ),
+  
+  ggplot(top15_customer, aes(x = mean_gutschrift)) +
+    geom_density(alpha = 0.5) +
+    labs(
+      title = "Verteilung der Top-N \nKunden nach \nGutschrift",
+      x = "Gutschrift",
+      y = "Dichte"
+    ),
+  
+  ggplot(top15_customer, aes(x = mean_belastung)) +
+    geom_density(alpha = 0.5) +
+    labs(
+      title = "Verteilung der Top-N \nKunden nach \nBelastung",
+      x = "Belastung",
+      y = "Dichte"
+    ),
+  
+  nrow = 1
+)
+```
+
+### 20.1.4 Transaktionsdaten der Top-N Kunden der letzten 3 Monate
+```{r}
+grid.arrange(
+  ggplot(top15_customer, aes(x = mean_balance_last_3_month)) +
+    geom_density(alpha = 0.5) +
+    labs(
+      title = "Verteilung der Top-N \nKunden nach \nBalance",
+      x = "Balance",
+      y = "Dichte",
+      
+    ),
+  
+  ggplot(top15_customer, aes(x = mean_gutschrift_last_3_month)) +
+    geom_density(alpha = 0.5) +
+    labs(
+      title = "Verteilung der Top-N \nKunden nach \nGutschrift",
+      x = "Gutschrift",
+      y = "Dichte"
+    ),
+  
+  ggplot(top15_customer, aes(x = mean_belastung_last_3_month)) +
+    geom_density(alpha = 0.5) +
+    labs(
+      title = "Verteilung der Top-N \nKunden nach \nBelastung",
+      x = "Belastung",
+      y = "Dichte"
+    ),
+  
+  nrow = 1
+)
 
 ```
+
+
+
 
  
 # 21. Wichtigkeit und Balancierung

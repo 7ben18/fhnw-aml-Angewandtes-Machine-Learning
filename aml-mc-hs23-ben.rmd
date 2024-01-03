@@ -32,6 +32,8 @@ library(ranger)
 library(e1071)
 library(rpart)
 library(xgboost)
+library(DALEX)
+library(DALEXtra)
 ```
 
 
@@ -3164,7 +3166,11 @@ for(i in 1:num_folds){
     objective = "binary:logistic",
     eval_metric = "logloss",
     eta = 0.3,
-    max_depth = 6
+    max_depth = 6,
+    alpha = 0.001,
+    max_bin = 256,
+    num_parallel_tree = 2,
+    tree_method = "auto"
   )
   
   # Train the model
@@ -3178,6 +3184,12 @@ for(i in 1:num_folds){
   confusion_matrix <- table(Predicted =
                               factor(pred_label),
                             Actual = y[test_idx])
+  
+  # get from a fold the confusion Matrix
+  if (i == 1) {
+    print("Konfusions Matrix für den ersten Fold")
+    print(confusion_matrix)
+  }
   
   tp <- confusion_matrix[2, 2]
   tn <- confusion_matrix[1, 1]
@@ -3320,6 +3332,7 @@ for (i in 1:length(roc_curves_list)) {
 ## 20.1 Top-N Kunden Vergleich von Modellen
 ```{r}
 
+
 ```
 
  
@@ -3329,15 +3342,163 @@ Untersuchen der globalen Wichtigkeit der Einflussfaktoren des
 Balancieren von globaler Wichtigkeit und Modellperformance.
 
 ## 21.1 Wichtigkeit
-```{r}
 
+```{r}
+explainer_xgb <- explain(model = bst, 
+                         data = X, 
+                         y = y, 
+                         label = "XGBoost")
+```
+```{r}
+pfi_plots <- function(N=100, n_feature_show=50) {
+  set.seed(123)
+  pfi_xgb <- model_parts(explainer_xgb, 
+                        type = "variable_importance", 
+                        N = N)
+  
+  p <- plot(head(pfi_xgb, n_feature_show)) + 
+    ggtitle(paste("N =", N)) + 
+      theme_minimal() + 
+      theme(axis.text.y = element_text(size = 4))
+    
+  p
+  
+}
+
+pfi_plots(N = 50, n_feature_show = 25)
+pfi_plots(N = 100, n_feature_show = 25)
+pfi_plots(N = NULL, n_feature_show = 25)
 ```
 
-## 21.2 Balancierung 
+## 21.2 Reduzieren des Modells
+
+Wir reduzieren das XGboost Modell, indem wir Parameter anpassen bzw. entfernen oder den Wert verringern. 
+
 ```{r}
+xgb_results_red <- data.frame()
+roc_curves_xgb_red <- list()
 
+for(i in 1:num_folds){
+  test_idx <- folds[[i]]
+  train_idx <- setdiff(1:length(y), test_idx)
+
+  dtrain <- xgb.DMatrix(data = X[train_idx, ],
+                        label = y[train_idx])
+  
+  dtest <- xgb.DMatrix(data = X[test_idx, ],
+                       label = y[test_idx])
+
+  # Parameters for binary classification
+  params <- list(
+    objective = "binary:logistic",
+    eval_metric = "logloss",
+    eta = 0.1,
+    max_depth = 3,
+    alpha = 0.001,
+    max_bin = 64,
+    num_parallel_tree = 1,
+    tree_method = "auto"
+  )
+  
+  # Train the model
+  bst <- xgb.train(params = params, 
+                   data = dtrain, 
+                   nrounds = 100)
+  # Predictions
+  pred_prob <- predict(bst, dtest)
+  pred_label <- ifelse(pred_prob > 0.5, 1, 0)
+  
+  confusion_matrix <- table(Predicted =
+                              factor(pred_label),
+                            Actual = y[test_idx])
+  
+  # get from a fold the confusion Matrix
+  if (i == 1) {
+    print("Konfusions Matrix für den ersten Fold")
+    print(confusion_matrix)
+  }
+  
+  tp <- confusion_matrix[2, 2]
+  tn <- confusion_matrix[1, 1]
+  fp <- confusion_matrix[1, 2]
+  fn <- confusion_matrix[2, 1]
+  
+  accuracy <- (tp + tn) / (tp + tn + fp + fn)
+  precision <- tp / (tp + fp)
+  recall <- tp / (tp + fn)
+  f1_score <- 2 * precision * recall / (precision + recall)
+  f05_score <- (1 + 0.5^2) * precision * recall / (0.5^2 * precision + recall)
+  f2_score <- (1 + 2^2) * precision * recall / (2^2 * precision + recall)
+  mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+  
+  # ROC and AUC
+  roc_obj <- roc(response = y[test_idx], predictor = pred_prob)
+  auc <- auc(roc_obj)
+  roc_curves_xgb_red[[i]] <- roc_obj
+  
+  # Store results
+  xgb_results_red <- rbind(xgb_results, data.frame(Fold = i,
+                                       AUC = auc,
+                                       Accuracy = accuracy, 
+                                       Precision = precision, 
+                                       Recall = recall, 
+                                       f1_score = f1_score,
+                                       f05_score = f05_score,
+                                       f2_score = f2_score,
+                                       mcc = mcc))
+}
+
+# View aggregated results
+print(xgb_results_red)
 ```
+```{r}
+# create a column with the model name 
+xgb_results_red$model_name <- "XGBoost Reduziert"
 
+# aggregate by model_name
+xgb_results_red_agg <- xgb_results_red %>%
+  group_by(model_name) %>%
+  summarise(
+    mean_auc = mean(AUC),
+    sd_auc = sd(AUC),
+    mean_accuracy = mean(Accuracy),
+    sd_accuracy = sd(Accuracy),
+    mean_precision = mean(Precision),
+    sd_precision = sd(Precision),
+    mean_recall = mean(Recall),
+    sd_recall = sd(Recall),
+    mean_f1_score = mean(f1_score),
+    sd_f1_score = sd(f1_score),
+    mean_f05_score = mean(f05_score),
+    sd_f05_score = sd(f05_score),
+    mean_f2_score = mean(f2_score),
+    sd_f2_score = sd(f2_score),
+    mean_mcc = mean(mcc),
+    sd_mcc = sd(mcc)
+  )
+
+xgb_results_red_agg
+
+
+# combine df with the other models
+model_results_df_with_red <- rbind(model_results_df, xgb_results_red_agg)
+
+model_results_df_with_red
+
+# visualize xgboost with xgboost reduced
+model_results_df_with_red %>% filter(model_name %in% c("XGBoost", "XGBoost Reduziert")) %>%
+  ggplot(aes(x = reorder(model_name, mean_auc), y = mean_auc, fill = model_name)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = mean_auc - sd_auc, ymax = mean_auc + sd_auc), width = 0.2) +
+  coord_flip() +
+  labs(
+    title = "AUC Performance der Modelle",
+    x = "Model",
+    y = "AUC"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
 
 # 22. Beschreibung 
 Beschreiben des Mehrwerts des “finalen” Modelles in der Praxis.

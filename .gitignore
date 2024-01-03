@@ -2,6 +2,8 @@ aml-other-stuff
 
 # Created by https://www.toptal.com/developers/gitignore/api/r
 # Edit at https://www.toptal.com/developers/gitignore?templates=r
+### png ###
+.png
 
 ### R ###
 # History files

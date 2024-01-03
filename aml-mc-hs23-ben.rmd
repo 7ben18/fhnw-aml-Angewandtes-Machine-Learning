@@ -31,6 +31,7 @@ library(pROC)
 library(ranger)
 library(e1071)
 library(rpart)
+library(xgboost)
 ```
 
 
@@ -2314,7 +2315,7 @@ full_data <- full_data %>% relocate(has_card.card, .after = last_col())
 full_data
 ```
 
-### 10.1.6 Export Full Data
+### 10.1.6 Export / Import Full Data
 ```{r}
 write_parquet(full_data_onehot, "data_export/full_data_onehot.parquet")
 full_data_onehot <- read_parquet("data_export/full_data_onehot.parquet")
@@ -2810,7 +2811,7 @@ Die Funktion `plot_roc` nimmt von den output der vorherhigen Funktion `perform_c
 Weiter gibt die Funktion ein Aggregiertes DataFrame zurück, damit wir später für den Model Vergleich, unterschiedliche Modelle miteinander visusalisieren können.
 
 ```{r}
-plot_roc <- function(roc_curves, roc_folds = FALSE, roc_model = FALSE) {
+plot_roc <- function(roc_curves, roc_folds = FALSE, roc_model = FALSE, model_name = "Baseline", get_agg_data = TRUE) {
   plot_data <- data.frame()
   
   num_folds <- length(roc_curves)
@@ -2844,15 +2845,23 @@ plot_roc <- function(roc_curves, roc_folds = FALSE, roc_model = FALSE) {
   aggregated_plot <- aggregated_data %>%
     ggplot(aes(x = FPR, y = MEAN_TPR)) + 
     geom_line(color = "lightblue") + 
-    labs(title = "ROC Model Performance", x = "False Positive Rate", y = "True Positive Rate", subtitle = "Durchschnittliche Model Performance") + 
+    labs(title = "ROC Model - Durchschnittliche Performance", 
+         x = "False Positive Rate", 
+         y = "True Positive Rate",
+         subtitle = model_name) + 
     theme_minimal() +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray")
+    geom_abline(slope = 1, 
+                intercept = 0, 
+                linetype = "dashed", 
+                color = "gray")
   
   if (roc_model) {
     print(aggregated_plot)
   }
   
-  return(list(data = aggregated_data))
+  if (get_agg_data) {
+    return(list(data = aggregated_data))
+  }
 }
 ```
 
@@ -2879,7 +2888,9 @@ results_df_base
 
 result_base <- plot_roc(roc_curves_base,
                         roc_folds = TRUE, 
-                        roc_model = TRUE)
+                        roc_model = TRUE,
+                        model_name = "Baseline Modell",
+                        get_agg_data = TRUE)
 result_base$data
 
 ```
@@ -2904,7 +2915,11 @@ results_df_full_stats
 results_df_full
 
 
-result_full <- plot_roc(roc_curves_full, roc_folds = TRUE, roc_model = TRUE)
+result_full <- plot_roc(roc_curves_full, 
+                        roc_folds = TRUE, 
+                        roc_model = TRUE,
+                        model_name = "Baseline Modell mit allen Features",
+                        get_agg_data = TRUE)
 result_full$data
 
 ```
@@ -2992,7 +3007,11 @@ results_df_dtc_stats
 results_df_dtc
 
 # Plot ROC curves for DTC
-result_dtc <- plot_roc(roc_curves_dtc, roc_folds = TRUE, roc_model = TRUE)
+result_dtc <- plot_roc(roc_curves_dtc, 
+                       roc_folds = TRUE, 
+                       roc_model = TRUE,
+                       model_name = "Decision Tree Classifier",
+                       get_agg_data = TRUE)
 
 # Display ROC curve data for DTC
 result_dtc$data
@@ -3095,7 +3114,11 @@ results_df_rfc_stats <- cv_results_rfc$results_df_stats
 results_df_rfc_stats
 results_df_rfc
 
-result_rfc <- plot_roc(roc_curves_rfc, roc_folds = TRUE, roc_model = TRUE)
+result_rfc <- plot_roc(roc_curves_rfc, 
+                       roc_folds = TRUE, 
+                       roc_model = TRUE,
+                       model_name = "Random Forest Classifier",
+                       get_agg_data = TRUE)
 result_rfc$data
 ```
 
@@ -3172,10 +3195,10 @@ for(i in 1:num_folds){
   
   # Store results
   xgb_results <- rbind(xgb_results, data.frame(Fold = i,
-                                       auc = auc,
-                                       accuracy = accuracy, 
-                                       precision = precision, 
-                                       recall = recall, 
+                                       AUC = auc,
+                                       Accuracy = accuracy, 
+                                       Precision = precision, 
+                                       Recall = recall, 
                                        f1_score = f1_score,
                                        f05_score = f05_score,
                                        f2_score = f2_score,
@@ -3189,7 +3212,11 @@ print(xgb_results)
 ```{r}
 # View aggregated results
 print(xgb_results)
-plot_roc(roc_curves = roc_list, roc_folds = TRUE, roc_model = TRUE)
+plot_roc(roc_curves = roc_list, 
+         roc_folds = TRUE, 
+         roc_model = TRUE,
+         model_name = "XGBoost",
+         get_agg_data = TRUE)
 ```
 
 
@@ -3199,7 +3226,98 @@ Performance “besten” Modelles mit ROC, AUC und Precision.
 
 ## 19.1 Modell Vergleich
 ```{r}
+model_name_list <- list("XGBoost", "Random Forest", "Decision Tree", "Logistic Reg. Full", "Logistic Reg. Baseline")
+model_results_list <- list(xgb_results, results_df_rfc, results_df_dtc, results_df_full, results_df_base)
 
+for (i in 1:length(model_name_list)) {
+  model_results_list[[i]]$model_name <- model_name_list[[i]]
+}
+
+
+for (i in 1:length(model_results_list)) {
+  model_results_list[[i]] <- model_results_list[[i]] %>%
+    group_by(model_name) %>%
+    summarise(
+      mean_auc = mean(AUC),
+      sd_auc = sd(AUC),
+      mean_accuracy = mean(Accuracy),
+      sd_accuracy = sd(Accuracy),
+      mean_precision = mean(Precision),
+      sd_precision = sd(Precision),
+      mean_recall = mean(Recall),
+      sd_recall = sd(Recall),
+      mean_f1_score = mean(f1_score),
+      sd_f1_score = sd(f1_score),
+      mean_f05_score = mean(f05_score),
+      sd_f05_score = sd(f05_score),
+      mean_f2_score = mean(f2_score),
+      sd_f2_score = sd(f2_score),
+      mean_mcc = mean(mcc),
+      sd_mcc = sd(mcc)
+    )
+}
+
+
+model_results_df <- do.call(rbind, model_results_list)
+
+model_results_df
+
+model_results_df %>%
+  ggplot(aes(x = reorder(model_name, mean_auc), y = mean_auc, fill = model_name)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = mean_auc - sd_auc, ymax = mean_auc + sd_auc), width = 0.2) +
+  coord_flip() +
+  labs(
+    title = "AUC Performance der Modelle",
+    x = "Model",
+    y = "AUC"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+model_results_df %>%
+  ggplot(aes(x = reorder(model_name, mean_precision), y = mean_precision, fill = model_name)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = mean_precision - sd_precision, ymax = mean_precision + sd_precision), width = 0.2) +
+  coord_flip() +
+  labs(
+    title = "Precision Performance der Modelle",
+    x = "Model",
+    y = "Precision"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+
+```
+
+
+
+```{r}
+
+model_names_list_string <- c("XGBoost", "Random Forest", "Decision Tree", "Logistic Reg. Full", "Logistic Reg. Baseline")
+roc_curves_list <- list(roc_list, roc_curves_rfc, roc_curves_dtc, roc_curves_full, roc_curves_base)
+
+# Define the number of rows and columns for subplots
+num_rows <- 2  # Change this to the desired number of rows
+num_cols <- 3  # Change this to the desired number of columns
+
+for (i in 1:length(model_names_list_string)) {
+  # Set up the plotting grid for the current subplot
+  par(mfrow = c(num_rows, num_cols))
+  
+  plot_roc(roc_curves = roc_curves_list[[i]], 
+           roc_folds = FALSE, 
+           roc_model = TRUE,
+           model_name = model_names_list_string[[i]],
+           get_agg_data = FALSE)
+  
+  # Reset the plotting layout for the next iteration
+  par(mfrow = c(1, 1))
+}
+
+# plot from roc_curves_list every roc curve 
 ```
 
 

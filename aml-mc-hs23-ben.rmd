@@ -2334,7 +2334,7 @@ full_data
 ### 10.1.7 Cache Leeren
 ```{r Cache Leeren}
 all_objects <- ls()
-remove_objects <- setdiff(all_objects, c("full_data"))
+remove_objects <- setdiff(all_objects, c("full_data", "full_data_onehot"))
 rm(list = remove_objects)
 print(ls())
 ```
@@ -2344,6 +2344,9 @@ print(ls())
 ### 10.2.1 Anzahl Kreditkartenbesitzer
 Anzahl Kreditkarten-Käufer und Nicht-Käufer mit kompletter 12 
 Monate-Rollup Information (Barplot).
+
+Bevor wir mit der Modellierung fortfahren ist es noch wichtig zu wissen, wie viele Kundendaten wir noch besitzen, nachdem wir die Daten Preprocessed haben. Gesamthaft haben wir in unserem Datensatz 2841 Kunden die keine Karte besitzen. Diese Kunden sind potentielle Käufer einer Karte. ca. 4x kleiner, haben wir in unserem Datensatz 691 Käufer, bzw Kartenbesitzer. Wir haben somit einen unbalanced Dataset mit einem Verhältnis von 4:1 - Nicht-Käufer zu Käufer.
+
 ```{r fig.height=6, fig.width=10, Anzahl Kreditkartenbesitzer}
 # Count the number of has_card.card 
 full_data %>% group_by(has_card.card) %>% summarize(count = n()) %>%  ggplot(aes(x = has_card.card, y = count)) +
@@ -2357,7 +2360,12 @@ full_data %>% group_by(has_card.card) %>% summarize(count = n()) %>%  ggplot(aes
 ```
 
 ### 10.2.2 Verteilung der Kaufzeitpunkte
+
 Verteilung der Kaufzeitpunkte der Kreditkarten-Käufer bzw. Vergleichszeitpunkte der Nicht-Käufer (Densityplot).
+
+Im Density Plot erkennen wir, dass unsere fictive issued Daten durchaus ähnlich verteilt sind wie die Kunden die eine Karte gekauft haben.
+Die Anzahl an abgeschlossene Karten steigt im Verlaufe der Zeit, so auch unsere fictiven Issued Daten, was ein gutes Zeichen dafür ist, dass unsere Denkweise bzw. Vergleich von Buyer mit Non-Buyer funktioniert hat.
+
 ```{r fig.height=6, fig.width=10, Verteilung der Kaufzeitpunkte}
 full_data %>% 
   select(issued.card, has_card.card) %>% 
@@ -2678,9 +2686,9 @@ Nach der Kontaktstunde mit Dani wurde mir bewusst, dass die vorherhigen Kapitel 
 Wieder beginnen wir damit Funktionen zu schreiben, die uns nützlich sind in der Modellierung und Klassifizierung sowie Evaluierung auf unseren KFold Datensatz.
 
 ## 14.1 Funktion - Baseline Daten + kFolds
-Die Funktion  ``create_baseline_data`` filtert uns die wichtigsten Features aus unserem grossen Datensatz. Diese Feature werden verwendet für unser Baseline Model. 
+Die Funktion  ``create_baseline_data`` filtert uns die wichtigsten Features aus unserem grossen Datensatz. Diese Feature werden verwendet für unser Baseline Model. Die Features für das Baseline Model sind: Alter, Geschlecht, Region, Guthaben, Gutschrift und Belastung.
 
-Auch erstellen wir direkt aus dem ganzen Datensatz die Daten Partitionierung bzw. unsere Kfolds. 
+Auch erstellen wir direkt aus dem ganzen Datensatz die Daten Partitionierung bzw. unsere Kfolds, die wir durch createFolds erstellen.
 
 ```{r Funktion - Baseline Daten + kFolds}
 create_baseline_data <- function(data) {
@@ -2707,6 +2715,12 @@ data_partition <- createFolds(rest_data$has_card.card, k = num_folds)
 ## 14.2 Funktion Baseline Model (Logistische Regression)
 
 Die Funktion `train_and_evaluate_lr` ist ein glm Model, welches eine Binäre Klassifkation durchführt mit der Zielvariable `has_card.card`. Diese Baseline Funktion dient als Grundlage für weitere Model Funktionen, welche später hinzukommen.
+
+Das glm Modell steht für Generalisierte Lineare Modelle und ist eine Erweiterung der klassischen linearen Modelle. Es ist ein flexibles statistisches Verfahren, das die Abhängigkeit einer stetigen Variablen von einer oder mehreren unabhängigen Variablen modelliert.
+
+Ein hlm ermöglicht die Modellierung von abhängigen Variablen, die nicht notwendigerweise normalverteilt sind, und ermöglicht die Verwendung verschiedener Verteilungen. 
+
+Für unsere Klassifikationstask nehmen wir die binomiale Verteilung, da wir eine binäre Klassifikation durchführen.
 
 ```{r Funktion Baseline Model (Logistische Regression)}
 train_and_evaluate_lr <- function(train_index,
@@ -2902,7 +2916,7 @@ Die logistische Regression ist ein einfaches, aber weit verbreitetes Modell für
 Sie basiert auf der logistischen Funktion, die die Wahrscheinlichkeit berechnet, dass eine Beobachtung zu einer bestimmten Klasse gehört.
 Die logistische Regression kann leicht interpretiert werden und eignet sich gut für den Einstieg in Klassifikationsprobleme.
 
-## 15.1 Baseline Model - Logistische Regression
+## 15.1 Baseline Model - Generalisierte lineare Modelle - Logistische Regression
 ```{r Baseline Model - Logistische Regression}
 cv_results_base <- perform_cross_validation(data_partition, 
                                             train_and_evaluate_lr, 
@@ -2959,9 +2973,12 @@ result_full$data
 
 # 16 Andere Algorithmen - Decision Tree
 
+Der Decision Tree ist ein nicht parametrischer Supervised Machine Learning Modell und wird für Klassifikations- sowie Regressionsprobleme verwendet. Decision Trees bilden die Grundlage für viele klassische Machine-Learning-Algorithmen wie Random Forests, Bagging und Boosted Decision Trees.
+
 ```{r Andere Algorithmen - Decision Tree}
 train_and_evaluate_dtc <- function(train_index, 
-                                   base_data=FALSE) {
+                                   base_data=FALSE,
+                                   test_mode=FALSE) {
   
   if (base_data) {
     train_data <- baseline_train_data[-train_index, ]
@@ -2969,6 +2986,14 @@ train_and_evaluate_dtc <- function(train_index,
   } else {
     train_data <- rest_data[-train_index, ]
     validation_data <- rest_data[train_index, ]
+  }
+  
+  if (test_mode) {
+    # carefull! -train_index must be train + val index!
+    train_data <- full_data[-train_index, ]
+    test_data <- full_data[train_index, ]
+    # use test_data like val_data
+    validation_data <- test_data
   }
   
   # Train the Decision Tree Model
@@ -3031,7 +3056,8 @@ train_and_evaluate_dtc <- function(train_index,
 # Perform cross-validation with Decision Tree Classifier (DTC)
 cv_results_dtc <- perform_cross_validation(data_partition, 
                                            train_and_evaluate_dtc,
-                                           base_data=FALSE)
+                                           base_data=FALSE,
+                                           test_mode = FALSE)
 
 # Extract ROC curves and results for DTC
 roc_curves_dtc <- cv_results_dtc$roc_curves
@@ -3057,12 +3083,11 @@ result_dtc$data
 
 Zuerst schreiben wir die `train_and_evaluate` Funktion, diesmal statt mit der Logistische Regression, nutzen wir den Random Forest. Ansonsten belibt die Funktion in seiner Grundstruktur die selbe, hier hätte man durchaus code Wiederholungen verhindern können. Jedoch habe ich mich einfachhalts halber mal entschieden dies so zu lassen und zu einem späteren Zeitpunkt aufzuräumen, falls ich noch Zeit und Kapazität habe (18.12.23).
 
-Random Forest ist ein Ensemble-Lernverfahren, das auf Entscheidungsbäumen basiert.
-Es kombiniert mehrere Entscheidungsbäume, um robustere Klassifikationsmodelle zu erstellen.
+Random Forest ist ein Ensemble-Lernverfahren, das auf Entscheidungsbäumen basiert. Es kombiniert mehrere Entscheidungsbäume, um robustere Klassifikationsmodelle zu erstellen. Das Ensemble ensteht, wenn am Ende alle Klassifikationsbäume eine Entscheidung getroffen haben und man die Klasse nimmt in dem die meisten Bäume übereinstimmen. Also sprich auch als Majority Voting bekannt.
 
 ```{r Andere Algorithmen - Random Forest}
 # Create a function to train the Random Forest model and evaluate
-train_and_evaluate_rfc <- function(train_index, base_data=FALSE) {
+train_and_evaluate_rfc <- function(train_index, base_data=FALSE, test_mode=FALSE) {
   
     if (base_data) {
     train_data <- baseline_train_data[-train_index, ]
@@ -3071,8 +3096,14 @@ train_and_evaluate_rfc <- function(train_index, base_data=FALSE) {
     train_data <- rest_data[-train_index, ]
     validation_data <- rest_data[train_index, ]
   }
-  
-  
+  if (test_mode) {
+    # carefull! -train_index must be train + val index!
+    train_data <- full_data[-train_index, ]
+    test_data <- full_data[train_index, ]
+    # use test_data like val_data
+    validation_data <- test_data
+  }  
+
   # Subset the training data for the current fold
   train_data <- baseline_train_data[-train_index, ]
   validation_data <- baseline_train_data[train_index, ]
@@ -3162,6 +3193,7 @@ result_rfc$data
 # 18 Andere Optimierungen - Xgboost
 
 Für das Xgboost nehmen wir den OneHotEncoded DataFrame, den wir im oberen Abschnitt vorbereitet haben. 
+XGBoost (Extreme Gradient Boosting) ist ein leistungsstarker Machine-Learning-Algorithmus, der für Supervised Learning-Aufgaben wie Klassifikation und Regression verwendet wird. Er basiert auf dem Gradient Boosting-Prinzip und verwendet Entscheidungsbäume, die nacheinander trainiert werden, um die Vorhersagegenauigkeit zu verbessern, indem er auf vorherigen Fehlern aufbaut und Gewichtungen für die Modelle anpasst.
 ```{r Andere Optimierungen - Xgboost}
 full_data_onehot
 
@@ -3689,25 +3721,6 @@ model_results_df_with_red %>% filter(model_name %in% c("XGBoost", "XGBoost Reduz
   theme(legend.position = "none")
 ```
 
+# 22. Zusammenfassung     
 
-# Lieferobjekte
-Die minimalen Lieferobjekte im Notebook umfassen:
-
-## Anzahl Kreditkarten-Käufer und Nicht-Käufer mit kompletter 12 
-Monate-Rollup Information (Barplot).
-
-## Verteilung der Kaufzeitpunkte der Kreditkarten-Käufer bzw. Vergleichszeitpunkte der Nicht-Käufer (Densityplot).
-
-## Beschreibung der konstruierten, eigenen Variablen.
-
-## Beschreibung von Baseline und mind. 3 Kandidaten-Modellen.
-
-## Performance-Vergleich von Baseline und mind. 3 KandidatenModellen für 10-fache Kreuzvalidierung (Metrik: ROC Kurve und AuC). PRÄDIKTIVE MODELLE Mini-Challenge Lieferobjekte
-
-## Performance-Vergleich von Baseline und mind. 3 KandidatenModellen für Testdaten (Metriken: Konfusionsmatrix, Accuracy,Kohen’s Kappa, Matthew’s Korrelation, Precision, Recall und F1 als Tabelle, ROC Kurve und AuC als Abbildung).
-
-## Globale Wichtigkeit der Einflussfaktoren von Baseline und mind. 3. Kandidaten-Modellen (Variable Importance Plot).
-
-## Quantifizierung der Unterschiede von Top-5%, Top-10% KundenListen für Baseline und mind. 3 Kandidaten-Modellen (eigene Ideen).
-
-## Modellgüte (Lift Kurve) und Einfluss zentraler Variablen des finalen Modelles (eigene Ideen, um Non-Data Scientists zu überzeugen).
+blabla

@@ -2520,6 +2520,7 @@ model_evaluation <- function(model, val_data) {
         # Calculate Matthews correlation coefficient
         matthews <- (tp * tn - fp * fn) /
             sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+        kappa <- 2 * (tp * tn - fp * fn) / ((tp + fn) * (fn + tn) + (tp + fp) * (fp + tn))
 
         # Calculate true positive rate and false positive rate
         TPR <- tp / (tp + fn)
@@ -2698,7 +2699,6 @@ baseline_test_data
 set.seed(123)
 num_folds <- 10
 
-data_partition <- createFolds(baseline_train_data$has_card.card, k = num_folds)
 data_partition <- createFolds(rest_data$has_card.card, k = num_folds)
 
 ```
@@ -2709,13 +2709,23 @@ Die Funktion `train_and_evaluate_lr` ist ein glm Model, welches eine Binäre Kla
 
 ```{r}
 train_and_evaluate_lr <- function(train_index,
-                                  base_data=FALSE) {
+                                  base_data=FALSE,
+                                  test_mode=FALSE) {
   if (base_data) {
     train_data <- baseline_train_data[-train_index, ]
     validation_data <- baseline_train_data[train_index, ]
-  } else {
+  } 
+  else {
     train_data <- rest_data[-train_index, ]
     validation_data <- rest_data[train_index, ]
+  }
+  
+  if (test_mode) {
+    # carefull! -train_index must be train + val index!
+    train_data <- full_data[-train_index, ]
+    test_data <- full_data[train_index, ]
+    # use test_data like val_data
+    validation_data <- test_data
   }
   
   # Train the Logistic Regression Model
@@ -2751,6 +2761,7 @@ train_and_evaluate_lr <- function(train_index,
   f05_score <- (1 + 0.5^2) * precision * recall / (0.5^2 * precision + recall)
   f2_score <- (1 + 2^2) * precision * recall / (2^2 * precision + recall)
   mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+  kappa <- 2 * (tp * tn - fp * fn) / ((tp + fn) * (fn + tn) + (tp + fp) * (fp + tn))
 
   return(list(auc = auc, 
               roc_curve = roc_data,
@@ -2761,7 +2772,9 @@ train_and_evaluate_lr <- function(train_index,
               f1_score = f1_score,
               f05_score = f05_score,
               f2_score = f2_score,
-              mcc = mcc))
+              mcc = mcc,
+              kappa = kappa,
+              pred_prob = lr_validation_prediction))
 }
 
 ```
@@ -2773,7 +2786,8 @@ Die Funktion `perform_cross_validation` führt auf jeden kfold die vorherhige im
 ```{r}
 perform_cross_validation <- function(data_partition, 
                                      train_eval_function,
-                                     base_data=FALSE) {
+                                     base_data=FALSE,
+                                     test_mode=FALSE) {
   roc_curves <- list()
   results_df <- data.frame(Fold = integer(), 
                            AUC = numeric(), 
@@ -2783,11 +2797,14 @@ perform_cross_validation <- function(data_partition,
                            f1_Score = numeric(),
                            f05_Score = numeric(),
                            f2_Score = numeric(),
-                           mcc = numeric())
+                           mcc = numeric(),
+                           kappa = numeric())
 
   # Perform cross-validation
   for (fold in 1:num_folds) {
-    result <- train_eval_function(data_partition[[fold]], base_data=base_data)
+    result <- train_eval_function(data_partition[[fold]], 
+                                  base_data=base_data, 
+                                  test_mode=test_mode)
     #roc_curves[[fold]] <- result$smoothed_roc_curve
     roc_curves[[fold]] <- result$roc_curve
     results_df <- rbind(results_df, data.frame(Fold = fold, 
@@ -2798,14 +2815,18 @@ perform_cross_validation <- function(data_partition,
                                                f1_score = result$f1_score,
                                                f05_score = result$f05_score,
                                                f2_score = result$f2_score,
-                                               mcc = result$mcc))
+                                               mcc = result$mcc,
+                                               kappa = result$kappa))
   }
+  
+  pred_prob = result$pred_prob
   
   # describe dataframe into 5 statistical summaries
   results_df_stats <- summary(results_df)
 
   return(list(roc_curves = roc_curves, results_df = results_df, 
-              results_df_stats = results_df_stats))
+              results_df_stats = results_df_stats, 
+              pred_prob = pred_prob))
 }
 
 
@@ -2884,7 +2905,10 @@ Die logistische Regression kann leicht interpretiert werden und eignet sich gut 
 ```{r}
 cv_results_base <- perform_cross_validation(data_partition, 
                                             train_and_evaluate_lr, 
-                                            base_data = TRUE)
+                                            base_data = TRUE,
+                                            test_mode = FALSE)
+
+length(cv_results_base$pred_prob)
 
 roc_curves_base <- cv_results_base$roc_curves
 results_df_base <- cv_results_base$results_df
@@ -2901,6 +2925,7 @@ result_base <- plot_roc(roc_curves_base,
 result_base$data
 
 ```
+
 
 ## 15.2 Verbesserung des Baseline Modell
 Systematisches Explorieren von Verbesserungsmöglichkeiten des 
@@ -2985,6 +3010,7 @@ train_and_evaluate_dtc <- function(train_index,
   f05_score <- (1 + 0.5^2) * precision * recall / (0.5^2 * precision + recall)
   f2_score <- (1 + 2^2) * precision * recall / (2^2 * precision + recall)
   mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+  kappa <- 2 * (tp * tn - fp * fn) / ((tp + fn) * (fn + tn) + (tp + fp) * (fp + tn))
 
   return(list(auc = auc, 
               roc_curve = roc_data, 
@@ -2994,7 +3020,8 @@ train_and_evaluate_dtc <- function(train_index,
               f1_score = f1_score,
               f05_score = f05_score,
               f2_score = f2_score,
-              mcc = mcc))
+              mcc = mcc,
+              kappa = kappa))
 }
 
 ```
@@ -3095,6 +3122,7 @@ train_and_evaluate_rfc <- function(train_index, base_data=FALSE) {
   f05_score <- (1 + 0.5^2) * precision * recall / (0.5^2 * precision + recall)
   f2_score <- (1 + 2^2) * precision * recall / (2^2 * precision + recall)
   mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+  kappa <- 2 * (tp * tn - fp * fn) / ((tp + fn) * (fn + tn) + (tp + fp) * (fp + tn))
 
   return(list(auc = auc, 
               roc_curve = roc_data, 
@@ -3104,7 +3132,8 @@ train_and_evaluate_rfc <- function(train_index, base_data=FALSE) {
               f1_score = f1_score,
               f05_score = f05_score,
               f2_score = f2_score,
-              mcc = mcc))
+              mcc = mcc,
+              kappa = kappa))
 }
 
 ```
@@ -3204,6 +3233,7 @@ for(i in 1:num_folds){
   f05_score <- (1 + 0.5^2) * precision * recall / (0.5^2 * precision + recall)
   f2_score <- (1 + 2^2) * precision * recall / (2^2 * precision + recall)
   mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+  kappa <- 2 * (tp * tn - fp * fn) / ((tp + fn) * (fn + tn) + (tp + fp) * (fp + tn))
   
   # ROC and AUC
   roc_obj <- roc(response = y[test_idx], predictor = pred_prob)
@@ -3219,7 +3249,8 @@ for(i in 1:num_folds){
                                        f1_score = f1_score,
                                        f05_score = f05_score,
                                        f2_score = f2_score,
-                                       mcc = mcc))
+                                       mcc = mcc,
+                                       kappa = kappa))
 }
 
 # View aggregated results
@@ -3240,6 +3271,8 @@ plot_roc(roc_curves = roc_curves_xgb,
 # 19. Vergleich der Modelle
 Vergleichen der Kandidatenmodelle und identifizieren des bzgl. 
 Performance “besten” Modelles mit ROC, AUC und Precision.
+
+(Metriken: Konfusionsmatrix, Accuracy,Kohen’s Kappa, Matthew’s Korrelation, Precision, Recall und F1 als Tabelle, ROC Kurve und AuC als Abbildung).
 
 ## 19.1 Modell Vergleich
 ```{r}
@@ -3270,7 +3303,9 @@ for (i in 1:length(model_results_list)) {
       mean_f2_score = mean(f2_score),
       sd_f2_score = sd(f2_score),
       mean_mcc = mean(mcc),
-      sd_mcc = sd(mcc)
+      sd_mcc = sd(mcc),
+      mean_kappa = mean(kappa),
+      sd_kappa = sd(kappa)
     )
 }
 
@@ -3279,37 +3314,139 @@ model_results_df <- do.call(rbind, model_results_list)
 
 model_results_df
 
+create_performance_plot <- function(data, x_col, y_col, 
+                                    y_sd_col, title, 
+                                    x_label, y_label) {
+  
+  model_colors = c("XGBoost" = "red", 
+  "Random Forest" = "blue", 
+  "Decision Tree" = "green", 
+  "Logistic Reg. Full" = "orange", 
+  "Logistic Reg. Baseline" = "purple")
+  
+  ggplot(data, aes(x = reorder({{x_col}}, {{y_col}}), y = {{y_col}}, fill = {{x_col}})) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymin = {{y_col}} - {{y_sd_col}}, ymax = {{y_col}} + {{y_sd_col}}), width = 0.2) +
+    coord_flip() +
+    labs(
+      title = title,
+      x = x_label,
+      y = y_label
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none") +
+    scale_fill_manual(values = model_colors)
+}
+
+# AUC
 model_results_df %>%
-  ggplot(aes(x = reorder(model_name, mean_auc), y = mean_auc, fill = model_name)) +
-  geom_bar(stat = "identity") +
-  geom_errorbar(aes(ymin = mean_auc - sd_auc, ymax = mean_auc + sd_auc), width = 0.2) +
-  coord_flip() +
-  labs(
+  create_performance_plot(
+    x_col = model_name,
+    y_col = mean_auc,
+    y_sd_col = sd_auc,
     title = "AUC Performance der Modelle",
-    x = "Model",
-    y = "AUC"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none")
+    x_label = "Model",
+    y_label = "AUC"
+  )
 
+# Accuracy
 model_results_df %>%
-  ggplot(aes(x = reorder(model_name, mean_precision), y = mean_precision, fill = model_name)) +
-  geom_bar(stat = "identity") +
-  geom_errorbar(aes(ymin = mean_precision - sd_precision, ymax = mean_precision + sd_precision), width = 0.2) +
-  coord_flip() +
-  labs(
+  create_performance_plot(
+    x_col = model_name,
+    y_col = mean_accuracy,
+    y_sd_col = sd_accuracy,
+    title = "Accuracy Performance der Modelle",
+    x_label = "Model",
+    y_label = "Accuracy"
+  )
+
+# Precision
+model_results_df %>%
+  create_performance_plot(
+    x_col = model_name,
+    y_col = mean_precision,
+    y_sd_col = sd_precision,
     title = "Precision Performance der Modelle",
-    x = "Model",
-    y = "Precision"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none")
+    x_label = "Model",
+    y_label = "Precision"
+  )
+
+# Recall
+model_results_df %>%
+  create_performance_plot(
+    x_col = model_name,
+    y_col = mean_recall,
+    y_sd_col = sd_recall,
+    title = "Recall Performance der Modelle",
+    x_label = "Model",
+    y_label = "Recall"
+  )
+
+# f1
+model_results_df %>%
+  create_performance_plot(
+    x_col = model_name,
+    y_col = mean_f1_score,
+    y_sd_col = sd_f1_score,
+    title = "f1 Performance der Modelle",
+    x_label = "Model",
+    y_label = "f1-score"
+  )
+
+# Kappa
+model_results_df %>%
+  create_performance_plot(
+    x_col = model_name,
+    y_col = mean_kappa,
+    y_sd_col = sd_kappa,
+    title = "Kappa Performance der Modelle",
+    x_label = "Model",
+    y_label = "Kappa"
+  )
+
+# mcc
+model_results_df %>%
+  create_performance_plot(
+    x_col = model_name,
+    y_col = mean_mcc,
+    y_sd_col = sd_mcc,
+    title = "MCC Performance der Modelle",
+    x_label = "Model",
+    y_label = "MCC"
+  )
 
 
+# Define a list of metrics you want to create plots for
+metrics <- c("AUC", "Accuracy", "Precision", "Recall", "f1", "Kappa", "MCC")
+
+# Create a for loop to generate plots for each metric
+for (metric in metrics) {
+  metric_col <- switch(
+    metric,
+    "AUC" = c("mean_auc", "sd_auc"),
+    "Accuracy" = c("mean_accuracy", "sd_accuracy"),
+    "Precision" = c("mean_precision", "sd_precision"),
+    "Recall" = c("mean_recall", "sd_recall"),
+    "f1" = c("mean_f1_score", "sd_f1_score"),
+    "Kappa" = c("mean_kappa", "sd_kappa"),
+    "MCC" = c("mean_mcc", "sd_mcc")
+  )
+  
+  plot_title <- paste(metric, "Performance der Modelle")
+  y_label <- metric
+  
+  model_results_df %>%
+    create_performance_plot(
+      x_col = model_name,
+      y_col = metric_col[1],
+      y_sd_col = metric_col[2],
+      title = plot_title,
+      x_label = "Model",
+      y_label = y_label
+    )
+}
 
 ```
-
-
 
 ```{r}
 
@@ -3335,13 +3472,16 @@ for (i in 1:length(roc_curves_list)) {
 Eine Möglichkeit Top-N Kunden aus der Modellierung zu erhalten, ist es mit der Wahrscheinlichkeits Vorhersage des Modelles zu arbeiten. In unserem Fall, haben wir oben beim XGBoost Modell die variable `pred_prob` definiert. Diese wird jedoch leider nach jedem kfold wieder überschrieben, da diese sich in einer for Schleife befindet. Wir arbeiten trotzem einfachhaltshalber damit, müssen uns jedoch bewusst sein, dass es sich hierbei um den letzten kfold handelt und bei einem anderen Fold es nicht die identischen Resultate geben wird. Wir haben bei der Funktion `create_top_customer_df` die Möglichkeit die Anzahl der Top-N Kunden zu definieren, hierbei werden nur die Top-N Kunden als Dataframe zurückgegeben, welche noch keine Kreditkarte haben, aber das Modell diese vorhhersagt.
 
 ```{r}
-
-```{r}
-create_top_customer_df <- function(data_vector, pred_prob_vector, full_data, n_customer = 15) {
+create_top_customer_df <- function(data_vector, pred_prob_vector, full_data, n_customer = NULL) {
   # Create a dataframe from the two vectors
   top_customer_df <- data.frame(account_id = data_vector, pred_prob = pred_prob_vector) %>%
     arrange(desc(pred_prob)) 
   print(top_customer_df)
+  
+  # if n_customer is not defined, return all customers
+  if (is.null(n_customer)) {
+    n_customer = length(data_vector)
+  }
   
   # Inner join with full data
   full_data_top_customer <- inner_join(full_data, 
@@ -3378,76 +3518,6 @@ ggplot(top15_customer, aes(x = age.client)) +
 ```
 
 
-### 20.1.3 Transaktionsdaten der Top-N Kunden
-```{r}
-# make grid plots of mean_balance and mean_gutschrift, mean_belastung
-grid.arrange(
-  ggplot(top15_customer, aes(x = mean_balance)) +
-    geom_density(alpha = 0.5) +
-    labs(
-      title = "Verteilung der Top-N \nKunden nach \nBalance",
-      x = "Balance",
-      y = "Dichte",
-      
-    ),
-  
-  ggplot(top15_customer, aes(x = mean_gutschrift)) +
-    geom_density(alpha = 0.5) +
-    labs(
-      title = "Verteilung der Top-N \nKunden nach \nGutschrift",
-      x = "Gutschrift",
-      y = "Dichte"
-    ),
-  
-  ggplot(top15_customer, aes(x = mean_belastung)) +
-    geom_density(alpha = 0.5) +
-    labs(
-      title = "Verteilung der Top-N \nKunden nach \nBelastung",
-      x = "Belastung",
-      y = "Dichte"
-    ),
-  
-  nrow = 1
-)
-```
-
-### 20.1.4 Transaktionsdaten der Top-N Kunden der letzten 3 Monate
-```{r}
-grid.arrange(
-  ggplot(top15_customer, aes(x = mean_balance_last_3_month)) +
-    geom_density(alpha = 0.5) +
-    labs(
-      title = "Verteilung der Top-N \nKunden nach \nBalance",
-      x = "Balance",
-      y = "Dichte",
-      
-    ),
-  
-  ggplot(top15_customer, aes(x = mean_gutschrift_last_3_month)) +
-    geom_density(alpha = 0.5) +
-    labs(
-      title = "Verteilung der Top-N \nKunden nach \nGutschrift",
-      x = "Gutschrift",
-      y = "Dichte"
-    ),
-  
-  ggplot(top15_customer, aes(x = mean_belastung_last_3_month)) +
-    geom_density(alpha = 0.5) +
-    labs(
-      title = "Verteilung der Top-N \nKunden nach \nBelastung",
-      x = "Belastung",
-      y = "Dichte"
-    ),
-  
-  nrow = 1
-)
-
-```
-
-
-
-
- 
 # 21. Wichtigkeit und Balancierung
 Untersuchen der globalen Wichtigkeit der Einflussfaktoren des 
 “besten” Modelles und Reduzieren des “besten” Modelles mittels 
@@ -3461,6 +3531,7 @@ explainer_xgb <- explain(model = bst,
                          y = y, 
                          label = "XGBoost")
 ```
+
 ```{r}
 pfi_plots <- function(N=100, n_feature_show=50) {
   set.seed(123)
@@ -3542,6 +3613,7 @@ for(i in 1:num_folds){
   f05_score <- (1 + 0.5^2) * precision * recall / (0.5^2 * precision + recall)
   f2_score <- (1 + 2^2) * precision * recall / (2^2 * precision + recall)
   mcc <- (tp * tn - fp * fn) / sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+  kappa <- 2 * (tp * tn - fp * fn) / ((tp + fn) * (fn + tn) + (tp + fp) * (fp + tn))
   
   # ROC and AUC
   roc_obj <- roc(response = y[test_idx], predictor = pred_prob)
@@ -3557,7 +3629,8 @@ for(i in 1:num_folds){
                                        f1_score = f1_score,
                                        f05_score = f05_score,
                                        f2_score = f2_score,
-                                       mcc = mcc))
+                                       mcc = mcc,
+                                       kappa = kappa))
 }
 
 # View aggregated results
@@ -3586,7 +3659,10 @@ xgb_results_red_agg <- xgb_results_red %>%
     mean_f2_score = mean(f2_score),
     sd_f2_score = sd(f2_score),
     mean_mcc = mean(mcc),
-    sd_mcc = sd(mcc)
+    sd_mcc = sd(mcc),
+    mean_kappa = mean(kappa),
+    sd_kappa = sd(kappa)
+    
   )
 
 xgb_results_red_agg
@@ -3612,11 +3688,6 @@ model_results_df_with_red %>% filter(model_name %in% c("XGBoost", "XGBoost Reduz
   theme(legend.position = "none")
 ```
 
-# 22. Beschreibung 
-Beschreiben des Mehrwerts des “finalen” Modelles in der Praxis.
-```{r}
-
-```
 
 # Lieferobjekte
 Die minimalen Lieferobjekte im Notebook umfassen:

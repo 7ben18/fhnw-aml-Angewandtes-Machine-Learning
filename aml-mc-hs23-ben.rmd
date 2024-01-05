@@ -46,7 +46,7 @@ explorativer Datenanalyse; entfernen von Junior-Kreditkarten Kunden.
 Insgesamt werden 8 verschiedene csv Files zur Verfuegung gestellt.
 Die Beschreibungen der Daten sind hier zu finden: https://sorry.vse.cz/~berka/challenge/PAST/index.html
 
-```{r read dataframe}
+```{r}
 # alle file namen
 file_names <- c(
   "account.csv", "card.csv", "client.csv", "disp.csv",
@@ -83,7 +83,7 @@ Die Tabelle account besitzt 4 Spalten, die account_id selbst, district_id welche
 Frequency welches die Haeufigkeit der Austellung von Kontoauszuegen definiert sowie ein datum. 
 
 Die Werte von frequency und datum muessen umgeaendert werden, weiter aendern wir ebenfalls den spaltenname von frequency zu issuance_statement_frequency.
-```{r wrangle account}
+```{r}
 # Frequency
 account <- account %>%
   mutate(frequency = case_when(
@@ -108,7 +108,7 @@ Die Tabelle card beinhaltet die card_id, dis_id (verweist auf disp df)
 type der Karte und issued. 
 Bei card aendern wir das Format in YYMMDD um und ignorierien die Zeit. 
 (Auch gemaess der Dokumentation, ist keine Zeit vorgesehen.)
-```{r wrangle card}
+```{r}
 # Datum formatieren
 card$issued <- as_date(ymd_hms(card$issued))
 
@@ -122,7 +122,7 @@ card %>% sample_n(size = 5)
 ### 1.2.3 client
 client Tabelle hat client_id, birht_number mit einem speziellen Format, YYMMDD
 fuer Maenner und YYMM + 50 DD fuer Frauen. Also sprich, wurden bei Frauen der Geburtsmonat um 50 addiert. Weiter gibt es noch die district_id, welches auf die district Tabelle verweist. 
-```{r wrangle client}
+```{r}
 # Funktion zur Geschlechterbestimmung
 get_gender <- function(birth_number) {
   year <- as.integer(substr(birth_number, 1, 2))
@@ -190,7 +190,7 @@ client %>% sample_n(size = 5)
 
 ### 1.2.4 disp
 disp hat disp_id, client_id, welches auf client dataframe verweist und account_id, welches auf account Tabelle verweist sowie den typ, wobei nur OWNER einen Dauerauftrag erstellen koennen und Kredite aufnehmen koennen.
-```{r wrangle disp}
+```{r}
 disp %>% sample_n(size = 5)
 ```
 
@@ -214,7 +214,7 @@ A14	no. of enterpreneurs per 1000 inhabitants
 A15	no. of commited crimes '95	
 A16	no. of commited crimes '96
 
-```{r wrangle district}
+```{r}
 district <- district %>% select(
   district_id = A1, district_name = A2,
   region = A3, num_of_habitat = A4,
@@ -243,7 +243,7 @@ status.
 
 Weiter checken wir, ob ein Account mehrere Loans haben kann, Gruppieren nach account und zaehlen die Anzahl Zeilen. Diese Fuegen wir dann spaeter zu unserem Loan DataFrame hinzu als weiteres Feature. 
 
-```{r wrangle loan}
+```{r}
 loan$date <- ymd(loan$date)
 
 loan <- loan %>%
@@ -281,7 +281,7 @@ k_symbol wird auf englisch uebersetzt
 Da es accounts gibt die keine Orders haben, versuchen wir den Order Datensatz zu erweitern, indem wir von account, account_id einen left join machen. Somit erhalten wir alle account auch diejenigen die keine order besitzen. Diese haben NA Werte, welche wir dann mit 0 beim Amount und "UNKOWN" bei k_symbol ersetzen.
 
 Ein account kann mehrere Orders haben, um spaeter einfacher joinen zu koenen versuchen wir durch aggregieren nach account_id die Summe, Mittelwert, Median Ausgaben zu erhalten. Bei den Kategorischen Spalte k_symbol versuchen wir diese One-Hot zu encoden. 
-```{r wrangle order}
+```{r}
 order <- order %>%
   mutate(k_symbol = case_when(
     k_symbol == "POJISTNE" ~ "INSURRANCE PAYMENT",
@@ -353,7 +353,7 @@ Die trans Tabelle hat trans_id, account_id, date, type, operation, amount und ba
 
 
 type, operation und k_symbol Werte werden auf Englisch uebersetzt
-```{r wrangle trans}
+```{r}
 trans <- trans %>%
   mutate(
     date = ymd(date),
@@ -390,7 +390,7 @@ trans %>% sample_n(size = 5)
 ### 1.3.1 Fehlende Werte
 Wir erkennen, dass die Transaktions Daten in der Tabelle order und trans fehlende Werte aufweisen. 
 
-```{r fehlende Werte}
+```{r}
 # check for missing values in each dataframe
 for (i in 1:length(data_frames)) {
   df_name <- names(data_frames)[i] # Get the dataframe name
@@ -404,7 +404,7 @@ for (i in 1:length(data_frames)) {
 Bei genauer Betrachtung des Dataframes "district" ist aufgefallen, dass bei dessen Einlesen die Spalten "unemploy_rate95" und "no_of_crime95" als Zeichenketten (Character) eingelesen wurden. Bei beiden Spalten wurde der ein "?" verwendet statt NA. 
 Hier in diesem Code Abschnitt imputieren den fehlenden Wert mit dem Mittelwert der jeweiligen Spalte.
 
-```{r wramgle missing values, warning=FALSE}
+```{r warning=FALSE}
 # Datentyp convertieren
 district$unemploy_rate95 <- as.numeric(district$unemploy_rate95)
 district$no_of_crimes95 <- as.numeric(district$no_of_crimes95)
@@ -426,7 +426,7 @@ plot_missing(district)
 
 Wir nutzen Data Explorer für eine erste Grobe Übersicht zu unseren Daten zu erhalten. 
 
-```{r perform eda with DataExplorer}
+```{r}
 # Function to perform EDA on a dataframe
 perform_eda <- function(df, df_name) {
   # Create a data exploration report for the dataframe
@@ -486,7 +486,7 @@ trans:
 ## 1.4 Junioren entfernen
 
 ### 1.4.1 entfernen von Junior Kreditkarten Kunden
-```{r remove junior card}
+```{r}
 # checken, welche Variabeln vorhanden sind.
 print(paste("Kartentypen:", unique(card$type)))
 
@@ -607,7 +607,7 @@ Durch unsere Skizze die unter als "skizze-tabelle-joinen" abgelegt wurde, wissen
 
 Wir innen joinen client und disp mit client_id, renamen die Spaltenamen und fügen jeweils ein suffix hinzu, um später noch eine Übersicht zu haben, von welcher Tabelle die Spalte entspringt. Beim inner joinen verlieren wir keine Kunden. Nach dem Joinen wissen wir von jedem Kunden, was für eine Art type der Kunde ist. OWNER oder DISPONENT.  
 
-```{r cmobine client-disp}
+```{r}
 # client und disp weisen eine 1:1 relation auf client_id auf.
 print(paste("Anzahl Zeilen client_ids_older_than_25 df:", nrow(client_ids_older_than_25)))
 print(paste("Anzahl Zeilen disp df:", nrow(disp)))
@@ -650,7 +650,7 @@ client_disp
 ### 2.1.1 gender vs. type
 Die meisten unserer Kunden sind vom typ her OWNER. Das Geschlecht ob man OWNER oder DISPONENT ist sehen bei beiden Verteilungen ähnlich gleich aus. 
 
-```{r eda}
+```{r}
 ggplot(client_disp, aes(
   x = age.client,
   color = gender.client
@@ -671,7 +671,7 @@ ggplot(client_disp, aes(
 ## 2.2 +card
 
 Wir joinen client_disp mit card über disp_id. Nicht jeder Kunde besitzt eine Karte, somit ist ein left join auf client_disp unsere Wahl, um keine Kunden zu verlieren. Weiter wurde eine weitere spalte erstellt, die uns markiert, ob der Kunde eine Karte besitzt oder nicht. Dies könnte später noch relevant werden bei der Evaluierung unsere Modelle.
-```{r +card}
+```{r}
 # Weiter joinen wir client_disp und card mit disp_id. Auch hier besteht eine 1:1 Beziehung.
 
 # Wir erkennen jedoch, dass es clienten gibt, die keine Karte besitzen. aus diesem Grund
@@ -699,7 +699,7 @@ client_disp_card
 ### 2.2.1 type vs. has_card
 Aus der Visualisierung erkennen wir, dass keine Disponenten existieren die eine Karte besitzen. Aus diesem Grund filtern wir unseren Datensatz nur nach Owner, da wir diesen Personen eine Karte anbieten, bzw Karten wie classic oder gold besitzen bzw. verkaufen koennten. 
 
-```{r eda}
+```{r}
 ggplot(client_disp_card, aes(
   x = age.client,
   color = has_card.card
@@ -716,7 +716,7 @@ ggplot(client_disp_card, aes(
 Kann ein Kunde Disponent und OWNER gleichzeitig sein?
 
 Ja es gibt Account die mehrere Zeilen beinhalten. 
-```{r eda}
+```{r}
 # groupby account and count number of rows
 client_disp_card %>%
   group_by(account_id) %>%
@@ -727,7 +727,7 @@ client_disp_card %>%
 ## 2.3 Filter nach OWNER
 
 Durch das Filtern verlieren wir 869 Kunden. Es bleiben von den 5369 Kunden nun noch 4500. 
-```{r filter for owner}
+```{r}
 # Filtern nach type.disp == "OWNER"
 print(paste("Anzahl entfernte Zeilen von client_disp_card df:", nrow(client_disp_card) - nrow(client_disp_card %>% filter(type.disp == "OWNER"))))
 
@@ -738,7 +738,7 @@ client_disp_card
 ### 2.3.1 groupby account_id
 
 Das das Filtern stellen wir nun fest, dass jeder Kunde nur ein Account bei der Bank besitzt. Diese koennen wir nun nutzen, um mit dem DataFrame account zu joinen. 
-```{r eda}
+```{r}
 # groupby account and count number of rows
 client_disp_card %>%
   group_by(account_id) %>%
@@ -750,7 +750,7 @@ client_disp_card %>%
 ## 2.4 + account
 Durch die Erkentnisse von 2.3.1 koennen wir nun einen Inner Join durchfuehren von unserem vorhanden dataframe client-disp-card mit account Tabelle. 
 Die Anzahl der Kunden bleibt somit gleich auf 4500. 
-```{r +account}
+```{r}
 # Ein Account kann mehrere disponenten haben.
 
 print(paste("Anzahl Zeilen account df:", nrow(account)))
@@ -778,7 +778,7 @@ client_disp_card_account
 
 Wir betrachten hier nun account und loan getrennt von unserem gejointen Dataframe. Erst in einem zweiten Schritt joinen wir beide Dataframes dann miteinander. Da ein Account ein Kredit haben kann oder nicht, fuehren wir einen left_join auf account ueber account_id.
 
-```{r loan-account}
+```{r}
 # Ein account kann ein Kredit haben oder auch nicht.
 account_loan <- left_join(
   x = account,
@@ -802,7 +802,7 @@ account_loan
 ### 2.5.1 NA Werte
 Durch das Joinen haben wir viele Spalten erhalten die NA Werte aufweisen. Bzw. nur die Spalten die von Loan kommen. Diese werden durch 0 oder no_loan ersetzt, da diese Accounts keinen Kredit besitzen. Beim Datum belassen wir die NA Werte
 
-```{r reaplce NA values}
+```{r}
 # reaplce NA values with 0 or no_loan
 account_loan <- account_loan %>%
   mutate(
@@ -823,7 +823,7 @@ Interessant zu sehen ist, dass die meisten Kredite schon abbezahlt wurden die ei
 
 Viele Account haben keinen Kredit aufgenommen.
 
-```{r eda, warning=FALSE}
+```{r warning=FALSE}
 # Kredithoehe vs. Payments mit dauer und status
 sample_n(account_loan, size = 1000) %>%
   ggplot(aes(
@@ -857,7 +857,7 @@ account_loan %>%
 ## 2.6 + account_loan
 
 Wir joinen nun beide groesseren Dataframes ueber account_id. Beide Dataframes weisen 4500 Zeilen, somit haben wir nach dem joinen immer noch 4500 Kunden, welche 22 Features aufweisen. 
-```{r +amount_loan}
+```{r}
 # account_loan mit client_disp_card_district_account joinen
 client_disp_card_account_loan <- inner_join(
   x = account_loan,
@@ -876,7 +876,7 @@ Was uns nun intressiert ist der Zusammenhang zwischen eine Karte zu besitzen und
 
 Es gibt Kunden die eine Karte haen und einen Kredit, analog gibt es auch Kunden die keine Karte haben, aber einen Kredit oder nicht. Somit behalten wir in unserem Datensatz die Kundschaft bei.
 
-```{r eda}
+```{r}
 client_disp_card_account_loan %>%
   ggplot(aes(
     x = has_loan.loan,
@@ -895,7 +895,7 @@ client_disp_card_account_loan %>%
 Wir überprüfen unser DataFrame ob eine Zeile einen Kunden entspricht indem wir nach account_id gruppieren und die Rows zaehlen.
 
 In unserem DataFrame ist jede Zeile ein Kunde. Somit konnte jedem Kunden ein Bank Account zugewiesen werden. 
-```{r eda}
+```{r}
 # groupby account and count number of rows
 client_disp_card_account_loan %>%
   group_by(account_id) %>%
@@ -908,7 +908,7 @@ client_disp_card_account_loan %>%
 Durch den Inner join mit order haben wir weiterhin die gleiche Anzahl Kunden.
 
 
-```{r +order}
+```{r}
 # inner join by account_id client_disp_card_district_account_loan und order
 
 print(paste("Anzahl Zeilen client_disp_card_account_loan_order df:", nrow(client_disp_card_account_loan)))
@@ -943,7 +943,7 @@ client_disp_card_account_loan_order
 ## 2.8 +district
 Wir erweitern unseren Datensatz mit dem district. Wichtig dabei zu beachten ist, dass wir jeweils einen district fuer die Filiale der Bank haben und einen district fuer den Kunden. In unserem Fall joinen wir unser Dataframe mit dem des Kunden, da uns dieser mehr interessiert, ob geographische Einfluesse den Kauf eines Bank Produktes.
 
-```{r +district}
+```{r}
 print(paste("Anzahl Zeilen district df:", nrow(district)))
 print(paste("Anzahl Zeilen client_disp_card_account_loan_order:", nrow(client_disp_card_account_loan_order)))
 
@@ -978,7 +978,7 @@ data
 ```
 
 ## 2.9 Data
-```{r data}
+```{r}
 data
 ```
 
@@ -990,7 +990,7 @@ Ein Account kann mehrere Transaktionen gemacht haben.
 - Aggregation mir Rolling Window von balance und
 - OneHotEncoding fuer Kategorische
 
-```{r +trans?}
+```{r}
 trans <- trans %>%
   select(-c(trans_id, account)) %>%
   arrange(account_id)
@@ -1004,7 +1004,7 @@ Identifizieren bestehender Kreditkartenkäufer inkl. Bestimmung des Kaufdatums u
 
 selektieren vom grossen dataframe has_card nach True und selektieren account_id und issued.card
 
-```{r identify buyers}
+```{r}
 # create a dataframe where has_card.card == TRUE
 account_ids_has_card <- data %>%
   filter(has_card.card == TRUE) %>%
@@ -1018,7 +1018,7 @@ account_ids_has_card
 Das Rollup Fenster definieren wir indem wir vom Kaufdatum 13 Monate subtrahieren (12 Monate History + 1 Monat Lag). Vor dem Kauf einer Kreditkarte kann es gut sein, dass der Kunde sich 1 Monat schon davor entschieden hat eine Karte zu beantragen und diese noch von der Bank verarbeitet werden muss. Aus diesem Grund filtern wir die Transaktionellen Daten zwischen den Bereich start_date (kaufdatum.datum - 13 Monate) und start_lag_date (kaufdatum.card - 1 Monat). Somit erhalten wir unsere Transkationsdaten fuer Kunden die eine Karte haben im gegebenen Zeitfenster.
 
 
-```{r rollup fenster}
+```{r}
 # vom Kaufdatum -13 Monate von Kunden die eine Karte besitzen
 account_ids_has_card <- account_ids_has_card %>%
   mutate(
@@ -1053,7 +1053,7 @@ buyers
 ## 3.3 Roll-up Fenster Pivotieren
 Ein Kunde der eine Karte hat, kann schon mehrere Transaktionen in einem Monat haben. Damit wir diese spaeter mit den non-buyers vergleichen koennen, extrahieren wir das Jahr und den Monat, gruppieren und pivotieren das Dataframe. So erhaltlen wir auf einer Zeile einen Kunden und deren zugehorigen Jahr-Monat als Spalte. Die Werte werden bewusst auf 1 oder 0 gesetzt, wobei 1 dafuer steht, dass eine Transaktion gemacht wurde in diesem Jahr-Monat und 0 fuer keine. 
 
-```{r pivotieren}
+```{r}
 # select from buyers only account_id and year_month, group by and count number of rows, if there is a transaction in this year-month set value to 1 else 0
 buyers_pivot <- buyers %>%
   select(account_id, year_month) %>%
@@ -1082,7 +1082,7 @@ buyers_pivot %>%
 ## 3.4 Roll-up visualization
 Wir schreiben eine Funktion die uns erlaubt nach beliebige accounts zu filtern die eine Karte besitzen und in unserem Roll-up Fenster sind. Anschliessend fuehren wir eine Visualisierung von balance durch und zeichnen noch zusaetzlich ein rollingwindow von 30 Tagen ein. Wichtig dabei zu beachten ist, dass das lag-Monat nicht mit visualisiert wird! Diese Visualisierung erlaubt es uns, Kunden mit dem Produkt einer Karte besser zu verstehen. 
 
-```{r balance visualization}
+```{r}
 visualize_account_balance <- function(transactions,
                                       accounts_to_filter) {
   # Filter transactions by account
@@ -1120,7 +1120,7 @@ visualize_account_balance(buyers,
 ## 3.4 EDA von Karten Kaeufer
 
 Wir schauen uns an, was ueberhaupt ein Kartenkaeufer ausmacht und explorieren den komibinerten Datensatz
-```{r fig.width=10, fig.height=10, eda buyers}}
+```{r}}
 # loan?
 # create a barplot and count has_loan
 data %>%
@@ -1222,7 +1222,7 @@ data %>%
 ## 3.5 Testing
 
 Wir versuchen aus den Transaktionsdaten von den buyer die Attribute in einem geeignetem Format zu kriegen. Dabei unterscheiden wir die Kategorische und Numerische Spalten. Grundsaetzlich gruppieren wir nach account_id und year_month und zaehlen bei den kategorischen variabeln wie oft diese variable vorkommt. Bei den numerischen Werten berechnen wir Attribute wie Summe, Mittelwert, Median etc.... anschliessend joinen wir alles zu einem Dataframe und pivotieren diese. Beim pivotieren erhalten wir zu viele Spalten (mehr als 1000). (Behalten den Code, vlt brauchen wir den spaeter)
-```{r testing}
+```{r}
 # Extracting year and month from the date column
 buyers$year_month <- format(as.Date(buyers$date), "%Y-%m")
 
@@ -1318,7 +1318,7 @@ Wir haben 3094 potenzielle Kunden denen wir eine Karte anbieten könnten.
 
 (Kontaktstunde vom 24.10.2023)
 Weiter schauen wir uns an, wann der account erstellt wurde und berechnen 12 Monate in die "zukunft", damit wir Neukunden nicht als potenzielle Kunden betrachten, da deren Verhalten am Anfang ein anderer ist, als bei einem langjaehrigen Kunden. 
-```{r non-buyers}
+```{r}
 # create a dataframe where has_card.card == FALSE
 account_ids_no_cards <- data %>%
   filter(has_card.card == FALSE) %>%
@@ -1355,7 +1355,7 @@ Anschliessend mit 1 oder 0 auffuellen. (Siehe 3.3)
 Analog mache ich das gleiche fuer non buyers, filtere aber jedoch nicht das Fenster. 
 Anschliessend picke ich random einen buyer aus und nehme den grössten jaccard wert mit non buyer in bezug auf die transkationsdaten jahr monat. Falls ein Non-Buyer mehrere aehnliche Buyers zugewiesen werden kann, so wird random ein Buyer gepickt und deren issued.date dem Non-Buyer uebertragen.
 
-```{r non-buyers prep}
+```{r}
 # get transaktion dataframe from non-buyers
 non_buyers <- inner_join(
   x = account_ids_no_cards,
@@ -1374,7 +1374,7 @@ non_buyers
 (Kontaktstunde vom 24.10.2023)
 Wir filtern die Transaktionsdaten, damit wir die Transkationsdaten von Neukunden (Kunden die im ersten Jahr bei der Bank sind), nicht haben. 
 
-```{r non-buyers rollup fenster}
+```{r}
 # create a column where you add one year to creation date
 non_buyers <- non_buyers %>%
   mutate(
@@ -1395,7 +1395,7 @@ non_buyers
 ### 4.2.2 Non-buyer pivotieren
 Wir pivotieren die non-buyers, analog wie bei den buyers. Jede Spalte repraesntiert das Jahr und den Monat, die Werte 1 oder 0 sagen aus, ob eine Transaktion durchgefuehrt wurde oder nicht. Da wir beim pivotieren nicht die gleiche Anzahl an spalten erhalten, wurde noch von den Transaktions Dataset das minimale und maximale Datum herausgefiltert und eine Liste gebastelt mit einem Abstand von jeweils einen Monat. Anschliessend ueberpruefen wir, ob das Jahr-Monat vorkam, falls nicht wird eine Spalte erstellt und diese mit 0 aufgefuellt. wir sortieren beide Dataframes und erhalten somit die gleiche Anzahl spalten fuer die buyers (im Roll-up Fenster) und non-buyers. 
 
-```{r non-buyers pivotieren}
+```{r}
 # pivot non-buyers
 non_buyers_pivot <- non_buyers %>%
   select(account_id, year_month) %>%
@@ -1452,7 +1452,7 @@ non_buyers_pivot
 ## 4.3 Bestimmung von fiktives issued_date
 Mit den beiden Dataframes aus 4.2.2 koennen wir nun den Jaccard-index berechnen. Sprich die groesste Zeitfensterueberlappungen von Roll-up Fenster Buyer und non-buyers. Da es sein kann, dass mehrere ueberlappungen von non-buyers und buyers gleich sind, picken wir random ein issued date in diesem fall vom buyer aus und fuegen dem den non-buyer hinzu. 
 
-```{r non-buyers jaccard}
+```{r}
 # WICHTIG: Sortieren nach account_id aufsteigend!
 
 # sort all dataframes by account_id ascending with a function
@@ -1475,7 +1475,7 @@ non_buyers_pivot
 
 ### 4.3.1 Umwandeln in Matrizen
 Wir wandeln die buyers_pivot un non_buyers_pivot in matrizen um, und droppen dabei account_id, da diese bei der Berechnung von Jaccard nicht dabei sein sollte. Aus diesem Grund war das sortieren vorhin sehr wichtig, damit spaeter eine Zuweisung wieder auf deren Indexe gemacht werden kann. 
-```{r matrix}
+```{r}
 # drop in buyers_pivot and non_buyers_pivot
 buyers_pivot_matrix <- buyers_pivot %>%
   select(-c(account_id)) %>%
@@ -1496,7 +1496,7 @@ non_buyers_pivot_matrix
 
 ### 4.3.2 Jaccard Index Testing
 Hier testen wir den Jaccard Index und schreiben eine Funktion dafuer.
-```{r jaccard testing}
+```{r}
 # Define two binary matrices
 matrix1 <- matrix(c(
   1, 0, 0, 1,
@@ -1533,7 +1533,7 @@ print(jaccard_matrix)
 
 ### 4.3.3 Anwendung Jaccard index
 Wir wenden die Funktion an unserem echten Datensatz und erhalten eine 691x3086 Jaccard Matrix. 691 Zeilen von den buyers und 3086 von den Non Buyers. 
-```{r jaccard application}
+```{r}
 # Calculate row-wise Jaccard index for each combination of rows with buyers_pivot_matrix and non_buyers_pivot_matrix
 nrows1 <- nrow(buyers_pivot_matrix)
 nrows2 <- nrow(non_buyers_pivot_matrix)
@@ -1551,7 +1551,7 @@ print(ncol(jaccard_matrix))
 
 ### 4.3.4 Indexe
 Da wir 3086 Spalten haben, muessten wir diese nun in Spalten betrachten, um den hoechsten Jaccard Wert und der zugehoerigen Index aus der Zeile herauszufinden. Wir koennen somit fuer jeden non-buyer den hochsten Wert und dem entsprechenden buyer herausholen, indem wir den index der zeile nehmen und diesen den issued.date nachschauen und dies dann im index von der Spalte im non-buyer account hinzufuegen.
-```{r Index}
+```{r}
 # for each column, get the highstes value and its corresponding row index and column index in a dataframe.
 jaccard_df <- data.frame()
 for (i in 1:ncol(jaccard_matrix)) {
@@ -1600,7 +1600,7 @@ account_ids_no_cards
 
 ### 4.3.5 Fiktives Issued Date
 Hier fuegen wir das fiktive issued date zu unserem account_ids_no_cards dataframe hinzu indem wir auf deren indexe zugreifen.
-```{r fiktives issued date}
+```{r}
 # inner join jaccard_df with account_ids_no_cards by non_buyers_card_index
 non_buyer_with_buyers_card_index <- inner_join(
   x = account_ids_no_cards,
@@ -1631,17 +1631,17 @@ non_buyers_fictive_date %>% arrange(non_buyer_account_id)
 ```
 
 
-```{r non_buyers_fictive_date}
+```{r}
 non_buyers_fictive_date
 ```
 
-```{r data}
+```{r}
 data
 ```
 
 
 ### 4.3.6 Fiktives Kaufdatum in grosses Dataframe hinzufuegen
-```{r fiktives issued date in data}
+```{r}
 # impute issued.card NA values in data with fictive_issued.card value by first column account_id
 data <- left_join(data, non_buyers_fictive_date, by = c("account_id" = "non_buyer_account_id")) %>%
   mutate(
@@ -1658,7 +1658,7 @@ data
 Visualisierungstest von non_buyer_account_id = 91 und buyer_account_id 3725, mittels Funktion aus 3.4
 
 Die Funnktion visualisiert, dass die Ueberlappung von non-buyer und buyer funktioniert hat und der Code von 4.3 funktioniert! 
-```{r vergleich}
+```{r}
 visualize_account_balance(trans,
   accounts_to_filter = c(91, 3725)
 )
@@ -1671,7 +1671,7 @@ visualize_account_balance(trans,
 ## 4.5 Rollup-Fenster Vergleich
 Wir selektieren von den Non-Buyers die account_id und das fiktive Datum, erstellen die Roll-up Fenster analog zu den Buyer und filtern die trans Dataset in den entsprechenden Roll-up Fenster und vergleichen diese dann mit der visualisierungs Funktion fuer die gleichen Accounts wie bei 4.3.4
 
-```{r rollup fenster vergleich}
+```{r}
 # als Vergleich account_ids_has_card
 account_ids_has_card <- account_ids_has_card %>% select(account_id:start_lag_date)
 account_ids_has_card
@@ -1742,7 +1742,7 @@ Die wichtigsten Dataframes die wir brauchen sind:
 
 ## 5.1 Speicher Putzen
 Wir bereinigen den Speicher indem wir alle Daten und Variabeln entfernen die wir nicht mehr benötigen, da ich ansonsten Probleme mit dem Zwischenspeicher erhalte und das Notebook langsam wird.
-```{r Speicher Putzen}
+```{r}
 all_objects <- ls()
 remove_objects <- setdiff(all_objects, c("data", "buyers", "non_buyers", "trans"))
 rm(list = remove_objects)
@@ -1750,7 +1750,7 @@ print(ls())
 ```
 
 ## 5.2 Export der Daten
-```{r Export der Daten}
+```{r}
 write_parquet(data, "data_export/data.parquet")
 write_parquet(trans, "data_export/trans.parquet")
 write_parquet(buyers, "data_export/buyers.parquet")
@@ -1759,7 +1759,7 @@ write_parquet(non_buyers, "data_export/non_buyers.parquet")
 
 ## 5.3 Import der Daten
 Damit wir nicht immer das Notebook neu laufen müssen werden hier die Daten wieder eingelesen. 
-```{r Import der Daten}
+```{r}
 data <- read_parquet("data_export/data.parquet")
 trans <- read_parquet("data_export/trans.parquet")
 buyers <- read_parquet("data_export/buyers.parquet")
@@ -1780,13 +1780,13 @@ Kreditkartenkauf (analog für Nicht-Käufer).
 Wir schreiben hier Funktionen die uns erlaubt, Kundeninformationen aus den Transaktions Dataframes für Käufer und Nicht-Käufer zu extrahieren.
 (Vermögen und Umsätze werden in Abschnitt 7. behandelt)
 
-```{r buyers non-buyers}
+```{r}
 buyers
 non_buyers
 ```
 
 ### 6.1.1 Funktion Suffix
-```{r Suffix}
+```{r}
 # Add sufix to column name
 add_suffix <- function(data, suffix) {
   colnames(data) <- paste(colnames(data), suffix, sep = ".")
@@ -1801,7 +1801,7 @@ non_buyers
 
 ### 6.1.2 Funktion Anzahl Transaktion pro Jahr-Monat
 Extrahieren der Anzahl Transaktionen pro Jahr-Monat. 
-```{r Transaktionen pro Jahr-Monat}
+```{r}
 # Create a function where you extract from column year_month the number of transaktion (count rows)
 extract_count <- function(data, trans) {
   data <- data %>%
@@ -1842,7 +1842,7 @@ extract_count <- function(data, trans) {
 ```
 
 ### 6.1.3 Funktion Kategorische Variablen
-```{r Kategorische Variablen}
+```{r}
 # Groupby account_id and count the number of occurenc for a catergorical variable
 extract_count_categorical <- function(data, col_name) {
   col_name_sym <- as.name(col_name)
@@ -1862,7 +1862,7 @@ extract_count_categorical <- function(data, col_name) {
 
 
 ## 6.2 Kundeninformation für 12 Monate von Käufer
-```{r Käufer}
+```{r}
 # extract number of transaction for year_month
 info_buyers <- extract_count(buyers, trans)
 # add sufix .n_trans
@@ -1908,7 +1908,7 @@ info_buyers
 
 
 ## 6.3 Kundeninformation für 12 Monate von Nicht-Käufer
-```{r Nicht-Käufer}
+```{r}
 # extract number of transaction for year_month
 info_non_buyers <- extract_count(non_buyers, trans)
 # add sufix .n_trans
@@ -1954,7 +1954,7 @@ info_non_buyers
 
 ## 6.4 Kundenalter bei Kaufdatum
 Wir berechnen direkt das Alter zur gegebenen issued.card Zeit indem wir das grosses Dataframe "data" mit einer weiteren Spalte erweitern namens: age_issued.card, dies erreichen wir indem wir vom Geburtstdatum und issued.card Datum das Alter heraus extrahieren.
-```{r Kundenalter bei Kaufdatum}
+```{r}
 data$age_issued.card <- as.integer(floor(difftime(data$issued.card, data$birht_number.client, units = "days") / 365.25))
 
 data
@@ -1962,7 +1962,7 @@ data
 
 
 ## 6.5 Resultate der Kundeninformationen
-```{r Resultate der Kundeninformationen}
+```{r}
 info_buyers
 info_non_buyers
 data %>% select(age_issued.card)
@@ -1973,7 +1973,7 @@ data %>% select(age_issued.card)
 Konstruieren der Vermögen und Umsätze im Rollup-Fenster auf Basis 
 der Transaktionshistorie.
 
-```{r Vermögen & Umsätze}
+```{r}
 unique(non_buyers$operation.trans)
 ```
 
@@ -1983,7 +1983,7 @@ Gutschriften sind folgende Operationen: NA, Collection from Another Bank, Credit
 Belastungen sind folgende Operationen: Withdrawal in Cash, Remittance to Another Bank
 In der Nachfolgende Funktion extrahieren wir von der Spalte Amount -> Gutschrift und Belastung.
 
-```{r Gutschrift und Belastung}
+```{r}
 gutschrift_belastung <- function(df) {
   df <- df %>%
     mutate(
@@ -2017,7 +2017,7 @@ Bemerkt habe ich weiter, dass der Monatlicher Umsatz berechnet werden kann indem
 Wir kennen die letzte Transaktion des Monates und könnnen somit immer den Saldo ablesen. Hier filtern wir nach den bestimmten Transaktionen, lesen das Vermoegen aus und pivotieren anschliessend das Dataframe, damit wir auf einer Zeile direkt herauslesen können, welches Vermögen der Kunde am Ende des Monates aufweist. 
 
 
-```{r Vermögen}
+```{r}
 balance_end_month <- function(df, display_df = FALSE) {
   df <- df %>%
     filter(is.na(operation.trans) & type.trans == "CREDIT") %>%
@@ -2041,7 +2041,7 @@ non_buyers_balance <- balance_end_month(non_buyers, display_df = TRUE)
 
 Hier aggregieren wir die Gutschrift und Belastungsspalten mittels einer kummulierten Summe und pivotieren diese anschliessend, dass wir aus einer Zeile den monatlichen Umsatz Gutschrift und Monatlichen Umsatz Belastung sehen. 
 
-```{r Umsätze}
+```{r}
 umsatz_end_month <- function(df, display_df = FALSE) {
   result <- df %>%
     select(account_id.trans, year_month.trans, gutschrift.trans, belastung.trans) %>%
@@ -2077,7 +2077,7 @@ Beim Umsatz wiederum achten wir nicht darauf und summieren den Monat nach Gutsch
 
 Das ist der Grund für die Differenz der Anzahl Rows bei den Dataframes.
 Wir gehen nun so vor, dass wir nun einen left_join auf buyers_balance machen, denn dort sind wir sicher, dass wir nicht mehr als 12 Zeilen pro Account_id haben.
-```{r Umsatz und Vermögen zusammenjoinen}
+```{r}
 buyers_balance_umsatz <- left_join(buyers_balance, buyers_umsatz, by = c("account_id.trans", "end_month"))
 
 non_buyers_balance_umsatz <- left_join(non_buyers_balance, non_buyers_umsatz, by = c("account_id.trans", "end_month"))
@@ -2095,7 +2095,7 @@ und Umsätze im Rollup-Fenster mittels Funktionen.
 
 ## 8.1 Funktion
 
-```{r Funktion}
+```{r}
 ## Full Roll-up Window
 summarize_transactions <- function(df) {
   df <- df %>% mutate(end_month = ymd(paste0(end_month, "-01")))
@@ -2171,7 +2171,7 @@ summarize_transaction_window(buyers_balance_umsatz, n_last_months = 2, suffix_na
 
 
 ## 8.2 Statistische Kennzahlen für Vermögen und Umsätze
-```{r Statistische Kennzahlen für Vermögen und Umsätze}
+```{r}
 # Buyers
 statistic_buyers <- summarize_transactions(buyers_balance_umsatz)
 
@@ -2199,7 +2199,7 @@ statistic_non_buyers
 
 ## 8.3 Export/Import der Aggregationen
 Die Aggregation dauern lange und werden deshalb hier als Parquet File exportiert, um sie gegebenenfalls wieder einzulesen.
-```{r Export/Import der Aggregationen}
+```{r}
 write_parquet(statistic_buyers, "data_export/statistic_buyers.parquet")
 write_parquet(statistic_non_buyers, "data_export/statistic_non_buyers.parquet")
 
@@ -2216,7 +2216,7 @@ Kombinieren event-bezogener Informationen von KreditkartenKäufern und Nicht-K�
 ## 9.1 Kombination
 Durch die Kombination aus den dem Dataframe Data und statistic_data erhalten wir ein grosses Dataframe welches 102 Features beinhaltet. 
 
-```{r Kombination}
+```{r}
 # concat statistic_buyers with statistic_non_buyers
 statistic_data <- rbind(statistic_buyers, statistic_non_buyers)
 statistic_data <- statistic_data %>% rename("account_id" = "account_id.trans")
@@ -2237,7 +2237,7 @@ Struktur der Modellierungsdaten mittels explorativer Datenanalyse.
 ## 10.1 Daten Bereinigen
 
 ### 10.1.1 NAN Werte Überprüfen
-```{r NAN Werte Überprüfen}
+```{r}
 count_na_in_columns <- function(df) {
     sapply(df, function(x) sum(is.na(x)))
 }
@@ -2246,7 +2246,7 @@ count_na_in_columns(full_data)
 ```
 
 ### 10.1.2 Spalte droppen
-```{r Spalte droppen}
+```{r}
 drop_columns <- function(data, columns_to_drop) {
   data <- subset(data, select = -c(columns_to_drop))
   return(data)
@@ -2263,7 +2263,7 @@ full_data <- full_data %>% select(-c("date.loan", "type.card", "type.disp"))
 ```
 
 ### 10.1.3 Kategorische Spalten One Hot Encoden
-```{r Kategorische Spalten One Hot Encoden}
+```{r}
 one_hot_encode <- function(data, categorical_columns) {
   # Loop through each categorical column and apply one-hot encoding
   for (col in categorical_columns) {
@@ -2290,7 +2290,7 @@ full_data_onehot
 ```
 
 ### 10.1.4 Logische Spalten
-```{r Logische Spalten}
+```{r}
 convert_logical_columns_to_binary <- function(data, logical_columns) {
   # Loop through each specified logical column and convert it
   for (col in logical_columns) {
@@ -2310,7 +2310,7 @@ full_data_onehot
 ```
 
 ### 10.1.5 Target Spalte neu anordnen
-```{r Target Spalte neu anordnen}
+```{r}
 # Reorder Col, Target Col as last Column
 full_data_onehot <- full_data_onehot %>% relocate(has_card.card, .after = last_col())
 full_data_onehot
@@ -2320,7 +2320,7 @@ full_data
 ```
 
 ### 10.1.6 Export / Import Full Data
-```{r Export / Import Full Data}
+```{r}
 write_parquet(full_data_onehot, "data_export/full_data_onehot.parquet")
 full_data_onehot <- read_parquet("data_export/full_data_onehot.parquet")
 full_data_onehot
@@ -2332,7 +2332,7 @@ full_data
 
 
 ### 10.1.7 Cache Leeren
-```{r Cache Leeren}
+```{r}
 all_objects <- ls()
 remove_objects <- setdiff(all_objects, c("full_data", "full_data_onehot"))
 rm(list = remove_objects)
@@ -2347,7 +2347,7 @@ Monate-Rollup Information (Barplot).
 
 Bevor wir mit der Modellierung fortfahren ist es noch wichtig zu wissen, wie viele Kundendaten wir noch besitzen, nachdem wir die Daten Preprocessed haben. Gesamthaft haben wir in unserem Datensatz 2841 Kunden die keine Karte besitzen. Diese Kunden sind potentielle Käufer einer Karte. ca. 4x kleiner, haben wir in unserem Datensatz 691 Käufer, bzw Kartenbesitzer. Wir haben somit einen unbalanced Dataset mit einem Verhältnis von 4:1 - Nicht-Käufer zu Käufer.
 
-```{r fig.height=6, fig.width=10, Anzahl Kreditkartenbesitzer}
+```{r}
 # Count the number of has_card.card 
 full_data %>% group_by(has_card.card) %>% summarize(count = n()) %>%  ggplot(aes(x = has_card.card, y = count)) +
   geom_bar(stat = "identity", fill = "blue") +
@@ -2366,7 +2366,7 @@ Verteilung der Kaufzeitpunkte der Kreditkarten-Käufer bzw. Vergleichszeitpunkte
 Im Density Plot erkennen wir, dass unsere fictive issued Daten durchaus ähnlich verteilt sind wie die Kunden die eine Karte gekauft haben.
 Die Anzahl an abgeschlossene Karten steigt im Verlaufe der Zeit, so auch unsere fictiven Issued Daten, was ein gutes Zeichen dafür ist, dass unsere Denkweise bzw. Vergleich von Buyer mit Non-Buyer funktioniert hat.
 
-```{r fig.height=6, fig.width=10, Verteilung der Kaufzeitpunkte}
+```{r}
 full_data %>% 
   select(issued.card, has_card.card) %>% 
   ggplot(aes(x = issued.card, fill = factor(has_card.card))) +
@@ -2389,7 +2389,7 @@ Wir trennen die Daten gleichmässig aufgrund der Spalte has_card.card damit wir 
 ## 11.1 Test Daten 10%
 Wir entfernen 10% unserer Daten für den Testdatensatz und Exportieren diese als Parquet File. 
 
-```{r Test Daten 10%}
+```{r}
 # sample 10% of the data but keep the same ratio of has_card.card add seed for reproducibility
 set.seed(123)
 test_data <- full_data %>%
@@ -2410,7 +2410,7 @@ Nun nehmen wir den restlichen Datensatz und trennen diese in Trainings und Valid
 
 anti_join()
 - anti_join() return all rows from x without a match in y.
-```{r Train-, Validierungsdaten}
+```{r}
 # Split the remaining data into train 80 % and validation data 20% make sure there are no data leakage between the three datasets
 set.seed(123)
 train_data <- rest_data %>%
@@ -2429,7 +2429,7 @@ val_data
 ## 11.3 Data Leakage und Ratio Test Test
 Data Leakage wird getestet durch semi_join()
 - semi_join() return all rows from x with a match in y.
-```{r Data Leakage und Ratio Test Test}
+```{r}
 # check if there is any data leakage by account_id between the three datasets
 
 ratio <- function(data, column) {
@@ -2471,7 +2471,7 @@ Bevor wir mit dem eigentlichen Modelieren starten definieren wir hier Funktionen
 
 ## 12.1 Model Evaluation
 Die Funktion Model Evaluation benoetigt als Input das Model und test_date. Die Funktion macht predictions auf den test_data und iteriert durch unterschiedliche tresholds. Anschliessend berechnet es die Konfusionsmatrix und deren Metriken und gibt als Output ein Dataframe mit den Metriken, welches für die Evaluierung weiter verwendet werden kann. 
-```{r Model Evaluation}
+```{r}
 model_evaluation <- function(model, val_data) {
     # Compute probabilities
     proba <- predict(model, val_data, type = "response")
@@ -2556,7 +2556,7 @@ model_evaluation <- function(model, val_data) {
 
 ## 12.2 ROC Kurve 
 Die plot_roc_curve nimmt als Input Parameter die evualtion_df, welches von der Funktion model_evaluation entsteht und visualisiert die ROC Kurve. 
-```{r ROC Kurve}
+```{r}
 # plot ROC curve with input metriken
 plot_roc_curve <- function(evaluation_df) {
     ggplot(evaluation_df, aes(x = FPR, y = TPR)) +
@@ -2578,17 +2578,17 @@ den Informationen “Alter”, “Geschlecht”, “Domizilregion”,
 “Vermögen” und “Umsatz” vor Kreditkartenkauf. 
 
 ## 13.1 Baseline Daten
-```{r Baseline Daten}
+```{r}
 val_data %>% select(has_card.card, age.client, gender.client, region.district, mean_balance, mean_gutschrift, mean_belastung) %>% arrange(desc(has_card.card))
 ```
 
 ## 13.1 Baseline Modell erstellen
-```{r Baseline Modell erstellen}
+```{r}
 base_line_model <- glm(has_card.card ~ age.client + gender.client + region.district + mean_balance + mean_gutschrift + mean_belastung, data = train_data, family = binomial)
 ```
 
 ## 13.2 Baseline Modell evaluieren
-```{r Baseline Modell evaluieren}
+```{r}
 baseline_evaluation <- model_evaluation(base_line_model, val_data)
 baseline_evaluation
 
@@ -2599,7 +2599,7 @@ plot_roc_curve(baseline_evaluation)
 Weil ich die Aufgabe nicht gelesen habe, dass wir Crossvalidieren sollten, mache ich auf den `rest_data` eine cross-validierung.
 
 Die Funktion `create_kfold` erlaubt es mir eine definierte anzahl an folds den `rest_data` in gleichmässige Verhältnisse mittels `strata_col` zu splitten. Als Output erhalte ich eine Liste, indem jeweils der train durch und valdierungsdatensatz ist für jeden Fold. Die Daten die ich kriege werden für alle Modelle genutzt, damit die Reproduzierbarkeit sowie die Vergleichbarkeit gewährleistet ist.
-```{r Cross-Validierung k-fold = 10}
+```{r}
 create_kfold <- function(rest_data, num_folds = 10, strata_col = has_card.card) {
   set.seed(19981218)
   cross_val_folds <- vfold_cv(rest_data, v = num_folds, strata = has_card.card)
@@ -2616,7 +2616,7 @@ kfolds_data <- create_kfold(rest_data)
 
 ## 13.4 Baseline Model mit k-fold=10
 Hier in diesem Abschnitt erstelle ich aus den kfolds Daten das Baseline Modell und werte diese anschliessend mit der `model_evaluation` Funktion aus die im Abschnitt 12.1 erstellt wurde. 
-```{r Baseline Model mit k-fold=10}
+```{r}
 models <- list()
 models_eval <- list()
 for (i in 1:length(kfolds_data)) {
@@ -2635,7 +2635,7 @@ for (i in 1:length(kfolds_data)) {
 
 ## 13.5 Plot 10 Baseline Roc Cruve
 Nun füge ich alle Ausgewerteten Baseline Modelle zusammen zu einem grossen Dataframe und kann den Datensatz später weiter gebrauchen für weitere Auswertungen. Vorweg Plotte ich die ROC Kurve und berechne für jeden Threshold den Mittelwert der Metriken sowie die Standardabweichung dazu. 
-```{r Plot 10 Baseline Roc Cruve}
+```{r}
 all_baseline_results <- do.call(rbind, models_eval)
 
 all_baseline_results %>% ggplot(aes(x = FPR, y = TPR, color = as.factor(baseline_model_nr))) + 
@@ -2690,7 +2690,7 @@ Die Funktion  ``create_baseline_data`` filtert uns die wichtigsten Features aus 
 
 Auch erstellen wir direkt aus dem ganzen Datensatz die Daten Partitionierung bzw. unsere Kfolds, die wir durch createFolds erstellen.
 
-```{r Funktion - Baseline Daten + kFolds}
+```{r}
 create_baseline_data <- function(data) {
   baseline_data <- data %>%
     select(has_card.card, age.client, gender.client, region.district, mean_balance, mean_gutschrift, mean_belastung) %>%
@@ -2722,7 +2722,7 @@ Ein hlm ermöglicht die Modellierung von abhängigen Variablen, die nicht notwen
 
 Für unsere Klassifikationstask nehmen wir die binomiale Verteilung, da wir eine binäre Klassifikation durchführen.
 
-```{r Funktion Baseline Model (Logistische Regression)}
+```{r}
 train_and_evaluate_lr <- function(train_index,
                                   base_data=FALSE,
                                   test_mode=FALSE) {
@@ -2798,7 +2798,7 @@ train_and_evaluate_lr <- function(train_index,
 
 Die Funktion `perform_cross_validation` führt auf jeden kfold die vorherhige implementierte `train_and_evaluation` Funktion aus und gibt dabei zwei wichtige Variabeln zurück, ein DataFrame welches alle Metriken enthalten und die ROC-Kurve, welche uns für die Auswertung sowie Visualisierung nützlich sein wird.
 
-```{r Funktion Cross-Validation}
+```{r}
 perform_cross_validation <- function(data_partition, 
                                      train_eval_function,
                                      base_data=FALSE,
@@ -2853,7 +2853,7 @@ perform_cross_validation <- function(data_partition,
 Die Funktion `plot_roc` nimmt von den output der vorherhigen Funktion `perform_cross_validation` und hat dabei zwei Parameter `roc_folds, roc_model`, welches uns erlaubt, entweder die Roc Kurven von allen Kfolds und/oder vom Model zu plotten.
 Weiter gibt die Funktion ein Aggregiertes DataFrame zurück, damit wir später für den Model Vergleich, unterschiedliche Modelle miteinander visusalisieren können.
 
-```{r Funktion um Roc Kurve zu plotten}
+```{r}
 plot_roc <- function(roc_curves, roc_folds = FALSE, roc_model = FALSE, model_name = "Baseline", get_agg_data = TRUE) {
   plot_data <- data.frame()
   
@@ -2917,7 +2917,7 @@ Sie basiert auf der logistischen Funktion, die die Wahrscheinlichkeit berechnet,
 Die logistische Regression kann leicht interpretiert werden und eignet sich gut für den Einstieg in Klassifikationsprobleme.
 
 ## 15.1 Baseline Model - Generalisierte lineare Modelle - Logistische Regression
-```{r Baseline Model - Logistische Regression}
+```{r}
 cv_results_base <- perform_cross_validation(data_partition, 
                                             train_and_evaluate_lr, 
                                             base_data = TRUE,
@@ -2949,7 +2949,7 @@ Verwendung anderer Algorithmen und Optimierung.
 
 Hier in diesem Abschnitt schmeissen wir alle Variabeln aus unserem Dataframe herin mit dem Paramater `base_data = FALSE` und schauen uns, was das bringt. 
 
-```{r Verbesserung des Baseline Modell}
+```{r}
 cv_results_full <- perform_cross_validation(data_partition, 
                                             train_and_evaluate_lr, 
                                             base_data = FALSE)
@@ -2975,7 +2975,7 @@ result_full$data
 
 Der Decision Tree ist ein nicht parametrischer Supervised Machine Learning Modell und wird für Klassifikations- sowie Regressionsprobleme verwendet. Decision Trees bilden die Grundlage für viele klassische Machine-Learning-Algorithmen wie Random Forests, Bagging und Boosted Decision Trees.
 
-```{r Andere Algorithmen - Decision Tree}
+```{r}
 train_and_evaluate_dtc <- function(train_index, 
                                    base_data=FALSE,
                                    test_mode=FALSE) {
@@ -3052,7 +3052,7 @@ train_and_evaluate_dtc <- function(train_index,
 
 ```
 
-```{r Andere Algorithmen - Decision Tree}
+```{r}
 # Perform cross-validation with Decision Tree Classifier (DTC)
 cv_results_dtc <- perform_cross_validation(data_partition, 
                                            train_and_evaluate_dtc,
@@ -3085,7 +3085,7 @@ Zuerst schreiben wir die `train_and_evaluate` Funktion, diesmal statt mit der Lo
 
 Random Forest ist ein Ensemble-Lernverfahren, das auf Entscheidungsbäumen basiert. Es kombiniert mehrere Entscheidungsbäume, um robustere Klassifikationsmodelle zu erstellen. Das Ensemble ensteht, wenn am Ende alle Klassifikationsbäume eine Entscheidung getroffen haben und man die Klasse nimmt in dem die meisten Bäume übereinstimmen. Also sprich auch als Majority Voting bekannt.
 
-```{r Andere Algorithmen - Random Forest}
+```{r}
 # Create a function to train the Random Forest model and evaluate
 train_and_evaluate_rfc <- function(train_index, base_data=FALSE, test_mode=FALSE) {
   
@@ -3170,7 +3170,7 @@ train_and_evaluate_rfc <- function(train_index, base_data=FALSE, test_mode=FALSE
 
 ```
 
-```{r Andere Algorithmen - Random Forest}
+```{r}
 cv_results_rfc <- perform_cross_validation(data_partition, 
                                            train_and_evaluate_rfc,
                                            base_data=FALSE)
@@ -3194,7 +3194,7 @@ result_rfc$data
 
 Für das Xgboost nehmen wir den OneHotEncoded DataFrame, den wir im oberen Abschnitt vorbereitet haben. 
 XGBoost (Extreme Gradient Boosting) ist ein leistungsstarker Machine-Learning-Algorithmus, der für Supervised Learning-Aufgaben wie Klassifikation und Regression verwendet wird. Er basiert auf dem Gradient Boosting-Prinzip und verwendet Entscheidungsbäume, die nacheinander trainiert werden, um die Vorhersagegenauigkeit zu verbessern, indem er auf vorherigen Fehlern aufbaut und Gewichtungen für die Modelle anpasst.
-```{r Andere Optimierungen - Xgboost}
+```{r}
 full_data_onehot
 
 set.seed(123)
@@ -3210,7 +3210,7 @@ folds <- createFolds(y,
 
 ```
 
-```{r Andere Optimierungen - Xgboost}
+```{r}
 xgb_results <- data.frame()
 roc_curves_xgb <- list()
 
@@ -3290,7 +3290,7 @@ for(i in 1:num_folds){
 print(xgb_results)
 ```
 
-```{r Andere Optimierungen - Xgboost}
+```{r}
 # View aggregated results
 print(xgb_results)
 plot_roc(roc_curves = roc_curves_xgb, 
@@ -3308,7 +3308,7 @@ Performance “besten” Modelles mit ROC, AUC und Precision.
 (Metriken: Konfusionsmatrix, Accuracy,Kohen’s Kappa, Matthew’s Korrelation, Precision, Recall und F1 als Tabelle, ROC Kurve und AuC als Abbildung).
 
 ## 19.1 Modell Vergleich
-```{r Modell Vergleich}
+```{r}
 model_name_list <- list("XGBoost", "Random Forest", "Decision Tree", "Logistic Reg. Full", "Logistic Reg. Baseline")
 model_results_list <- list(xgb_results, results_df_rfc, results_df_dtc, results_df_full, results_df_base)
 
@@ -3481,7 +3481,7 @@ for (metric in metrics) {
 
 ```
 
-```{r Modell Vergleich}
+```{r}
 
 model_names_list_string <- c("XGBoost", "Random Forest", "Decision Tree", "Logistic Reg. Full", "Logistic Reg. Baseline")
 roc_curves_list <- list(roc_curves_xgb, roc_curves_rfc, roc_curves_dtc, roc_curves_full, roc_curves_base)
@@ -3504,7 +3504,7 @@ for (i in 1:length(roc_curves_list)) {
 
 Eine Möglichkeit Top-N Kunden aus der Modellierung zu erhalten, ist es mit der Wahrscheinlichkeits Vorhersage des Modelles zu arbeiten. In unserem Fall, haben wir oben beim XGBoost Modell die variable `pred_prob` definiert. Diese wird jedoch leider nach jedem kfold wieder überschrieben, da diese sich in einer for Schleife befindet. Wir arbeiten trotzem einfachhaltshalber damit, müssen uns jedoch bewusst sein, dass es sich hierbei um den letzten kfold handelt und bei einem anderen Fold es nicht die identischen Resultate geben wird. Wir haben bei der Funktion `create_top_customer_df` die Möglichkeit die Anzahl der Top-N Kunden zu definieren, hierbei werden nur die Top-N Kunden als Dataframe zurückgegeben, welche noch keine Kreditkarte haben, aber das Modell diese vorhhersagt.
 
-```{r Top-N Kunden Vergleich von Modellen}
+```{r}
 create_top_customer_df <- function(data_vector, pred_prob_vector, full_data, n_customer = NULL) {
   # Create a dataframe from the two vectors
   top_customer_df <- data.frame(account_id = data_vector, pred_prob = pred_prob_vector) %>%
@@ -3538,7 +3538,7 @@ Interessant ist es nun zu wissen, welche Gemeinsamkeiten diese Kunden haben, die
 
 
 ### 20.1.2 Altersverteilung der Top-N Kunden
-```{r Altersverteilung der Top-N Kunden}
+```{r}
 # distruitbio plot of age with geom_density
 ggplot(top15_customer, aes(x = age.client)) +
   geom_density(alpha = 0.5) +
@@ -3558,14 +3558,14 @@ Balancieren von globaler Wichtigkeit und Modellperformance.
 
 ## 21.1 Wichtigkeit
 
-```{r Wichtigkeit}
+```{r}
 explainer_xgb <- explain(model = bst, 
                          data = X, 
                          y = y, 
                          label = "XGBoost")
 ```
 
-```{r Wichtigkeit}
+```{r}
 pfi_plots <- function(N=100, n_feature_show=50) {
   set.seed(123)
   pfi_xgb <- model_parts(explainer_xgb, 
@@ -3590,7 +3590,7 @@ pfi_plots(N = NULL, n_feature_show = 25)
 
 Wir reduzieren das XGboost Modell, indem wir Parameter anpassen bzw. entfernen oder den Wert verringern. 
 
-```{r Reduzieren des Modells}
+```{r}
 xgb_results_red <- data.frame()
 roc_curves_xgb_red <- list()
 
@@ -3669,7 +3669,7 @@ for(i in 1:num_folds){
 # View aggregated results
 print(xgb_results_red)
 ```
-```{r Reduzieren des Modells}
+```{r}
 # create a column with the model name 
 xgb_results_red$model_name <- "XGBoost Reduziert"
 

@@ -1,8 +1,33 @@
 ---
 title: "aml-mc-hs23-ben"
 author: "Si Ben Tran"
-date: "31.12.2023"
-subtitle: Product Affinity Modelling
+date: "12.01.2024"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 4
+    df_print: paged
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    theme: united
+    highlight: tango
+    code_folding: hide
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+subtitle: Mini-Challenge 1
+editor_options: 
+  markdown: 
+    wrap: sentence
 ---
 
 # Aufgaben
@@ -2363,7 +2388,7 @@ full_data %>% group_by(has_card.card) %>% summarize(count = n()) %>%  ggplot(aes
 
 Verteilung der Kaufzeitpunkte der Kreditkarten-Käufer bzw. Vergleichszeitpunkte der Nicht-Käufer (Densityplot).
 
-Im Density Plot erkennen wir, dass unsere fictive issued Daten durchaus ähnlich verteilt sind wie die Kunden die eine Karte gekauft haben.
+Im Density Plot erkennen wir, dass unsere fictive issued Daten durchaus ähnlich verteilt sind, wie die Kunden die eine Karte gekauft haben.
 Die Anzahl an abgeschlossene Karten steigt im Verlaufe der Zeit, so auch unsere fictiven Issued Daten, was ein gutes Zeichen dafür ist, dass unsere Denkweise bzw. Vergleich von Buyer mit Non-Buyer funktioniert hat.
 
 ```{r}
@@ -2913,10 +2938,10 @@ Nun geht es darum, die Bausteine aus Kapitel 14 zusammenzufügen sowie zu testen
 Bemerkung: Die Daten haben wir oben im Kapitel 14.1 schon vorbereitet.
 
 Die logistische Regression ist ein einfaches, aber weit verbreitetes Modell für binäre Klassifikationsprobleme.
-Sie basiert auf der logistischen Funktion, die die Wahrscheinlichkeit berechnet, dass eine Beobachtung zu einer bestimmten Klasse gehört.
-Die logistische Regression kann leicht interpretiert werden und eignet sich gut für den Einstieg in Klassifikationsprobleme.
+Sie basiert auf der logistischen Funktion, die die Wahrscheinlichkeit berechnet, dass eine Beobachtung zu einer bestimmten Klasse gehört. Die Basis Grundlage ist die Sigmoid Funktion, der für eine Binäre Klasse die Wahrscheinlichkeit vorraussagt. 
+Die logistische Regression kann leicht interpretiert werden und eignet sich gut für den Einstieg in Klassifikationsprobleme. 
 
-## 15.1 Baseline Model - Generalisierte lineare Modelle - Logistische Regression
+## 15.1 Baseline Model - Logistische Regression - Logistische Regression
 ```{r}
 cv_results_base <- perform_cross_validation(data_partition, 
                                             train_and_evaluate_lr, 
@@ -2947,7 +2972,7 @@ Systematisches Explorieren von Verbesserungsmöglichkeiten des
 Baseline Modelles durch Erweiterung erklärender Variablen, 
 Verwendung anderer Algorithmen und Optimierung.
 
-Hier in diesem Abschnitt schmeissen wir alle Variabeln aus unserem Dataframe herin mit dem Paramater `base_data = FALSE` und schauen uns, was das bringt. 
+Hier in diesem Abschnitt schmeissen wir alle Variabeln aus unserem Dataframe in das Logistische Regression Modell hinein. Dies können wir tun indem wir mit dem Paramater `base_data = FALSE` setzen und schauen uns an was das bringt. 
 
 ```{r}
 cv_results_full <- perform_cross_validation(data_partition, 
@@ -2974,6 +2999,9 @@ result_full$data
 # 16 Andere Algorithmen - Decision Tree
 
 Der Decision Tree ist ein nicht parametrischer Supervised Machine Learning Modell und wird für Klassifikations- sowie Regressionsprobleme verwendet. Decision Trees bilden die Grundlage für viele klassische Machine-Learning-Algorithmen wie Random Forests, Bagging und Boosted Decision Trees.
+
+Der Name Decision Tree leitete sich aus dem Erscheinungsbild ab, welches einem Baum entspricht. Ein Decision Tree besteht aus Wurzeln, Ästen und Blätter, dabei wird der Decision Tree immer von oben nach unten betrachtet. Der Decision Tree ist also hierarchisch aufgebaut. Als Start dient uns ein Wurzelknoten, wird auch Root Node oder Root genannt, diese beinhaltete eine binaere Entscheidung (True oder False) die getroffen wird. Je nachdem, wie die Entscheidung fiel, wandert man einem Pfad bzw. Ast entlang zum naechsten Knotenpunkt, diese wird auch Branches oder Internal Nodes genannt, beim naechsten Knotenpunkt wird wieder eine binaere Entscheidung gefaellt, um einen weiteren Pfad zu nehmen. Dies geschieht solange bis man an das Ende angekommen ist. Das Ende eines Decision Tree nennt man auch Blatt, Leaf Nodes oder Leaf. Haeufig werden Decision Tree verwendet, um Klassifikations Aufgaben zu loesen.
+
 
 ```{r}
 train_and_evaluate_dtc <- function(train_index, 
@@ -3081,7 +3109,7 @@ result_dtc$data
 
 # 17 Andere Algorithmen - Random Forest
 
-Zuerst schreiben wir die `train_and_evaluate` Funktion, diesmal statt mit der Logistische Regression, nutzen wir den Random Forest. Ansonsten belibt die Funktion in seiner Grundstruktur die selbe, hier hätte man durchaus code Wiederholungen verhindern können. Jedoch habe ich mich einfachhalts halber mal entschieden dies so zu lassen und zu einem späteren Zeitpunkt aufzuräumen, falls ich noch Zeit und Kapazität habe (18.12.23).
+Zuerst schreiben wir die `train_and_evaluate` Funktion, diesmal statt mit der Logistische Regression, nutzen wir den Random Forest. Ansonsten belibt die Funktion in seiner Grundstruktur die selbe, hier hätte man durchaus code Wiederholungen verhindern können. Jedoch habe ich mich einfachhalts halber mal entschieden dies so zu lassen und zu einem späteren Zeitpunkt aufzuräumen, falls ich noch Zeit und Kapazität habe (stand 18.12.23).
 
 Random Forest ist ein Ensemble-Lernverfahren, das auf Entscheidungsbäumen basiert. Es kombiniert mehrere Entscheidungsbäume, um robustere Klassifikationsmodelle zu erstellen. Das Ensemble ensteht, wenn am Ende alle Klassifikationsbäume eine Entscheidung getroffen haben und man die Klasse nimmt in dem die meisten Bäume übereinstimmen. Also sprich auch als Majority Voting bekannt.
 
@@ -3193,7 +3221,9 @@ result_rfc$data
 # 18 Andere Optimierungen - Xgboost
 
 Für das Xgboost nehmen wir den OneHotEncoded DataFrame, den wir im oberen Abschnitt vorbereitet haben. 
-XGBoost (Extreme Gradient Boosting) ist ein leistungsstarker Machine-Learning-Algorithmus, der für Supervised Learning-Aufgaben wie Klassifikation und Regression verwendet wird. Er basiert auf dem Gradient Boosting-Prinzip und verwendet Entscheidungsbäume, die nacheinander trainiert werden, um die Vorhersagegenauigkeit zu verbessern, indem er auf vorherigen Fehlern aufbaut und Gewichtungen für die Modelle anpasst.
+XGBoost (Extreme Gradient Boosting) ist ein leistungsstarker Machine-Learning-Algorithmus, der für Supervised Learning-Aufgaben wie Klassifikation und Regression verwendet wird. Er basiert auf dem Gradient Boosting-Prinzip und verwendet Entscheidungsbäume, die nacheinander trainiert werden, um die Vorhersagegenauigkeit zu verbessern, indem er auf vorherigen Fehlern aufbaut und Gewichtungen für die Modelle anpasst. Xgboost ist ein sehr beliebtes Modell und wir bei Klassifkation und Regressions Problemen oft angewendet. Der Nachteil hierbei ist jedoch, dass die Interpretierbarkeit des Modells schwieriger nachzuvollziehen ist, als bei einem Decision Tree.
+
+
 ```{r}
 full_data_onehot
 
@@ -3229,9 +3259,8 @@ for(i in 1:num_folds){
     objective = "binary:logistic",
     eval_metric = "logloss",
     eta = 0.3,
-    max_depth = 6,
-    alpha = 0.001,
-    max_bin = 256,
+    max_depth = 10,
+    max_bin = 512,
     num_parallel_tree = 2,
     tree_method = "auto"
   )
@@ -3306,6 +3335,10 @@ Vergleichen der Kandidatenmodelle und identifizieren des bzgl.
 Performance “besten” Modelles mit ROC, AUC und Precision.
 
 (Metriken: Konfusionsmatrix, Accuracy,Kohen’s Kappa, Matthew’s Korrelation, Precision, Recall und F1 als Tabelle, ROC Kurve und AuC als Abbildung).
+
+Unser Dataframe enthält zu allen erstellten Modellen deren Performance Leistung auf unterschiedlichen Metriken. Es hängt jeweils vom Use-Case ab, auf welcher dieser Metrik man optimieren möchte. In unserem Fall erkennen wir auch bei den diversen Barplots, dass nicht immer das gleiche Modell an der Spitze steht. 
+
+Nutzen wir nun den AUC um zu beurteilen, welche unsere Modelle am besten perfort hat, so ist es das Xgboost Modell. Generell kann man aber jedoch sagen, dass die andere Modelle ebenfalls sehr gut performt haben und nicht weit weg vom AUC Wert des Xgboost liegen. Man könnte somit sich die Option offen halten, ob man eine Einbusse in der Performance in Kauf nimmt, um die Erklärbarkeit des ausgewählten Modells zu erhöhen. 
 
 ## 19.1 Modell Vergleich
 ```{r}
@@ -3538,6 +3571,8 @@ Interessant ist es nun zu wissen, welche Gemeinsamkeiten diese Kunden haben, die
 
 
 ### 20.1.2 Altersverteilung der Top-N Kunden
+
+Unsere potentiellen TopN Kunden sind Kunden die sich gegen das Alter von 50 Jahren bewegen.
 ```{r}
 # distruitbio plot of age with geom_density
 ggplot(top15_customer, aes(x = age.client)) +
@@ -3549,7 +3584,20 @@ ggplot(top15_customer, aes(x = age.client)) +
   ) +
   theme_minimal()
 ```
+### 20.1.2 Geschlechterverteilung der Top-N Kunden
 
+Hier sehen wir, dass potentielle Kunden eher Frauen sind als Männer da sie häufiger vertreten sind. Dies könnte aber jedoch auch ein Bias von unserem Datensatz sein, welches man genauer untersuchen müsste.
+```{r}
+ggplot(top15_customer, aes(x = gender.clientmale)) +
+  geom_bar() +
+  labs(
+    title = "Verteilung der Top-N Kunden nach Geschlecht",
+    subtitle = "1 = Mann, 0 = Frau",
+    x = "Geschlecht",
+    y = "Anzahl"
+  ) +
+  theme_minimal()
+```
 
 # 21. Wichtigkeit und Balancierung
 Untersuchen der globalen Wichtigkeit der Einflussfaktoren des 
@@ -3589,6 +3637,9 @@ pfi_plots(N = NULL, n_feature_show = 25)
 ## 21.2 Reduzieren des Modells
 
 Wir reduzieren das XGboost Modell, indem wir Parameter anpassen bzw. entfernen oder den Wert verringern. 
+
+Wir können erkennen, dass bei der Reduktion des Xgboost Modelles, sich die Performance leicht verbessert. Jedoch kann man diese Verbesserung auch vernachlässigen, da sich die Standardabweichungen vom Mittelwert nicht gross verändern und die Überlappung somit sehr gross ist. 
+
 
 ```{r}
 xgb_results_red <- data.frame()
@@ -3668,6 +3719,7 @@ for(i in 1:num_folds){
 
 # View aggregated results
 print(xgb_results_red)
+
 ```
 ```{r}
 # create a column with the model name 
@@ -3721,6 +3773,15 @@ model_results_df_with_red %>% filter(model_name %in% c("XGBoost", "XGBoost Reduz
   theme(legend.position = "none")
 ```
 
-# 22. Zusammenfassung     
+# 22. Finales Model beschreiben
 
-blabla
+Das Finale Modell ist unser XGboost Modell, welches für Personen die Keine Kreditkarte besitzen eine Wahrscheinlichkeit vorhersagt, ob diese eine Kreditkarte besitzen sollten.
+
+Der Mehrwert dieses Modell für die Bank ist, dass diese potentielle Kunden ansprechen kann die noch keine Kundenkarte besitze und die Bank somit ihre Kundenbasis erweitern kann und mehr Umsatz genereiert. 
+
+Weiter kann die Bank dieses Modell als einen Part der Marketing-Kampagne der Bank verwenden. Eventuell lassen sich mehrere Strategien miteinander kombinieren um den best möglichen potentiellen Kunden ausfindig zu machen und diesen dann gezielt anzusprechen, um diesen als Kunden zu gewinnen.
+
+
+
+
+

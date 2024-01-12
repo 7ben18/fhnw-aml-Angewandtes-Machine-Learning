@@ -3,6 +3,10 @@ title: "aml-mc-hs23-ben"
 author: "Si Ben Tran"
 date: "12.01.2024"
 output:
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
   html_notebook:
     toc: yes
     toc_depth: 4
@@ -13,18 +17,10 @@ output:
     theme: united
     highlight: tango
     code_folding: hide
-  html_document:
-    toc: yes
-    toc_depth: '4'
-    df_print: paged
-  html_document:
-    toc: yes
-    toc_depth: '4'
-    df_print: paged
   pdf_document:
     toc: yes
     toc_depth: '4'
-subtitle: Mini-Challenge 1
+subtitle: Mini-Challenge1
 editor_options: 
   markdown: 
     wrap: sentence
@@ -1145,7 +1141,8 @@ visualize_account_balance(buyers,
 ## 3.4 EDA von Karten Kaeufer
 
 Wir schauen uns an, was ueberhaupt ein Kartenkaeufer ausmacht und explorieren den komibinerten Datensatz
-```{r}}
+
+```{r}
 # loan?
 # create a barplot and count has_loan
 data %>%
@@ -1247,6 +1244,7 @@ data %>%
 ## 3.5 Testing
 
 Wir versuchen aus den Transaktionsdaten von den buyer die Attribute in einem geeignetem Format zu kriegen. Dabei unterscheiden wir die Kategorische und Numerische Spalten. Grundsaetzlich gruppieren wir nach account_id und year_month und zaehlen bei den kategorischen variabeln wie oft diese variable vorkommt. Bei den numerischen Werten berechnen wir Attribute wie Summe, Mittelwert, Median etc.... anschliessend joinen wir alles zu einem Dataframe und pivotieren diese. Beim pivotieren erhalten wir zu viele Spalten (mehr als 1000). (Behalten den Code, vlt brauchen wir den spaeter)
+
 ```{r}
 # Extracting year and month from the date column
 buyers$year_month <- format(as.Date(buyers$date), "%Y-%m")
